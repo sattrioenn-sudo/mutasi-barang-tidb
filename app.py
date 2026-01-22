@@ -80,17 +80,31 @@ else:
         st.write(f"Logged in: **{st.secrets['auth']['username']}**")
         st.markdown("---")
         
-        with st.expander("📥 Input Transaksi", expanded=True):
+       with st.expander("📥 Input Transaksi", expanded=True):
             with st.form("input", clear_on_submit=True):
-                n = st.text_input("Nama Barang")
+                # Tambahan Input SKU
+                sku = st.text_input("Kode Barang (SKU)", placeholder="Contoh: BRG-001")
+                n = st.text_input("Nama Barang", placeholder="Contoh: Kursi Kantor")
+                
                 j = st.selectbox("Aksi", ["Masuk", "Keluar"])
                 q = st.number_input("Qty", min_value=1)
+                
                 if st.form_submit_button("Simpan", use_container_width=True):
                     if n:
-                        conn = init_connection(); cur = conn.cursor()
-                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah) VALUES (%s,%s,%s)", (n,j,q))
-                        conn.commit(); conn.close()
+                        # Menggabungkan SKU dan Nama jika SKU diisi
+                        # Hasilnya: [BRG-001] Kursi Kantor
+                        nama_lengkap = f"[{sku}] {n}" if sku else n
+                        
+                        conn = init_connection()
+                        cur = conn.cursor()
+                        # Masukkan ke kolom nama_barang yang sudah ada
+                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah) VALUES (%s,%s,%s)", 
+                                   (nama_lengkap, j, q))
+                        conn.commit()
+                        conn.close()
                         st.rerun()
+                    else:
+                        st.error("Nama barang wajib diisi!")
 
         with st.expander("🗑️ Management"):
             try:
