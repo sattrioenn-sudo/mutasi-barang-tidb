@@ -3,13 +3,12 @@ import mysql.connector
 import pandas as pd
 
 # 1. Page Configuration
-st.set_page_config(page_title="Inventory Prime", page_icon="🚀", layout="wide")
+st.set_page_config(page_title="Inventory Prime v2", page_icon="🚀", layout="wide")
 
-# 2. Ultra Modern CSS
+# 2. Ultra Modern CSS (Ditingkatkan agar sidebar lebih lega)
 st.markdown("""
     <style>
-    /* Mengatur Font dan Background */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
     
     .stApp {
@@ -17,33 +16,29 @@ st.markdown("""
         color: #ffffff;
     }
 
-    /* Card Style untuk Metrics */
+    /* Metric Card Improvement */
     .metric-card {
-        background: rgba(255, 255, 255, 0.05);
-        padding: 20px;
-        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.03);
+        padding: 1.5rem;
+        border-radius: 12px;
         border: 1px solid rgba(255, 255, 255, 0.1);
         text-align: center;
-        transition: 0.3s;
-    }
-    .metric-card:hover {
-        background: rgba(255, 255, 255, 0.1);
-        border-color: #4facfe;
-    }
-
-    /* Glassmorphism Login Container */
-    .login-container {
-        background: rgba(255, 255, 255, 0.05);
-        backdrop-filter: blur(20px);
-        padding: 40px;
-        border-radius: 20px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
     }
     
-    /* Status Badge */
-    .badge-masuk { background-color: #28a745; color: white; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
-    .badge-keluar { background-color: #dc3545; color: white; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+    /* Sidebar Styling agar tidak sumpek */
+    [data-testid="stSidebar"] {
+        background-color: rgba(20, 20, 40, 0.8);
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    /* Login Glassmorphism */
+    .login-container {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+        padding: 3rem;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -59,7 +54,7 @@ def init_connection():
         use_pure=True
     )
 
-# 4. Session State for Auth
+# 4. Auth Session
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
@@ -69,13 +64,13 @@ if not st.session_state["logged_in"]:
     _, col2, _ = st.columns([1, 1.2, 1])
     with col2:
         st.markdown("<div class='login-container'>", unsafe_allow_html=True)
-        st.markdown("<h1 style='text-align:center; color:#4facfe;'>🚀 INVENTORY PRIME</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align:center; opacity:0.7;'>Enterprise Resources Monitoring</p>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align:center; color:#4facfe; margin-bottom:0;'>INV-PRIME</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; opacity:0.6; margin-bottom:2rem;'>Secure Access Portal</p>", unsafe_allow_html=True)
         
         with st.form("login_form"):
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
-            if st.form_submit_button("AUTHENTICATE", use_container_width=True):
+            if st.form_submit_button("UNLOCK SYSTEM", use_container_width=True):
                 if u == st.secrets["auth"]["username"] and p == st.secrets["auth"]["password"]:
                     st.session_state["logged_in"] = True
                     st.rerun()
@@ -87,19 +82,17 @@ if not st.session_state["logged_in"]:
 else:
     # Sidebar Navigation
     with st.sidebar:
-        st.markdown("<h2 style='color:#4facfe;'>INV-PRIME</h2>", unsafe_allow_html=True)
-        st.write(f"Active Session: `{st.secrets['auth']['username']}`")
-        if st.button("🚪 Secure Logout"):
-            st.session_state["logged_in"] = False
-            st.rerun()
+        st.markdown("<h2 style='color:#4facfe;'>🚀 INV-PRIME</h2>", unsafe_allow_html=True)
+        st.write(f"User: `{st.secrets['auth']['username']}`")
         
         st.markdown("---")
-        with st.expander("📥 Input Data Baru", expanded=True):
+        # INPUT DATA SECTION
+        with st.expander("📥 Input Transaksi", expanded=True):
             with st.form("input_form", clear_on_submit=True):
-                n = st.text_input("Nama Barang")
+                n = st.text_input("Nama Barang", placeholder="Contoh: Kursi")
                 j = st.selectbox("Aksi", ["Masuk", "Keluar"])
-                q = st.number_input("Qty", min_value=1)
-                if st.form_submit_button("Submit Transaction"):
+                q = st.number_input("Qty", min_value=1, step=1)
+                if st.form_submit_button("Simpan", use_container_width=True):
                     if n:
                         conn = init_connection()
                         cur = conn.cursor()
@@ -108,24 +101,41 @@ else:
                         conn.close()
                         st.rerun()
 
-        with st.expander("🗑️ Management Data"):
+        # MANAGEMENT DATA SECTION (PERBAIKAN AGAR TIDAK NUMPUK)
+        with st.expander("🗑️ Management"):
             try:
                 conn = init_connection()
                 items = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn)
                 conn.close()
-                target = st.selectbox("Pilih Master Barang", items['nama_barang'])
-                if st.button("Hapus Seluruh Data Barang"):
-                    conn = init_connection()
-                    cur = conn.cursor()
-                    cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
-                    conn.commit()
-                    conn.close()
-                    st.rerun()
-            except: pass
+                
+                if not items.empty:
+                    target = st.selectbox("Pilih Barang:", items['nama_barang'])
+                    
+                    # Beri jarak agar tidak numpuk
+                    st.write("---")
+                    st.warning("Penghapusan bersifat permanen.")
+                    conf = st.checkbox("Saya yakin hapus data")
+                    
+                    if st.button("🔥 HAPUS MASTER", use_container_width=True, disabled=not conf):
+                        conn = init_connection()
+                        cur = conn.cursor()
+                        cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
+                else:
+                    st.info("Belum ada data.")
+            except: 
+                pass
+
+        st.markdown("---")
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state["logged_in"] = False
+            st.rerun()
 
     # Dashboard Content
     st.markdown("<h1 style='margin-bottom:0;'>Real-time Analytics</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='opacity:0.6;'>Monitoring mutasi barang langsung dari database TiDB Cloud</p>", unsafe_allow_html=True)
+    st.markdown("<p style='opacity:0.6; margin-bottom:2rem;'>Inventory tracking powered by TiDB Cloud</p>", unsafe_allow_html=True)
 
     try:
         conn = init_connection()
@@ -133,37 +143,48 @@ else:
         conn.close()
 
         if not df.empty:
-            # Kalkulasi Data Inovatif
+            # Kalkulasi Metrics
             df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
             stok_df = df.groupby('nama_barang')['adj'].sum().reset_index()
+            stok_df.columns = ['Nama Barang', 'Saldo Stok']
             
-            # Baris Metrics (KPI Cards)
+            # Row 1: KPI Cards
             c1, c2, c3 = st.columns(3)
             with c1:
-                st.markdown(f"<div class='metric-card'><h3>Total Transaksi</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+                st.markdown(f"<div class='metric-card'><p style='opacity:0.7; margin:0;'>Total Record</p><h2 style='color:#4facfe; margin:0;'>{len(df)}</h2></div>", unsafe_allow_html=True)
             with c2:
-                top_item = stok_df.iloc[stok_df['adj'].idxmax()]['nama_barang'] if not stok_df.empty else "-"
-                st.markdown(f"<div class='metric-card'><h3>Stok Terbanyak</h3><h2>{top_item}</h2></div>", unsafe_allow_html=True)
+                top_item = stok_df.iloc[stok_df['Saldo Stok'].idxmax()]['Nama Barang']
+                st.markdown(f"<div class='metric-card'><p style='opacity:0.7; margin:0;'>Item Terbanyak</p><h2 style='color:#00ff88; margin:0;'>{top_item}</h2></div>", unsafe_allow_html=True)
             with c3:
-                total_qty = df['jumlah'].sum()
-                st.markdown(f"<div class='metric-card'><h3>Volume Barang</h3><h2>{total_qty}</h2></div>", unsafe_allow_html=True)
+                vol = df['jumlah'].sum()
+                st.markdown(f"<div class='metric-card'><p style='opacity:0.7; margin:0;'>Total Volume</p><h2 style='color:#ffaa00; margin:0;'>{vol}</h2></div>", unsafe_allow_html=True)
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # Baris Tabel Transaksi & Stok
-            col_main, col_sub = st.columns([2, 1])
+            # Row 2: Tabel dengan Badge Otomatis
+            col_main, col_sub = st.columns([1.8, 1.2])
             with col_main:
-                st.markdown("### 📜 Log Aktivitas Terbaru")
-                # Memberikan warna pada status
-                df_display = df[['tanggal', 'nama_barang', 'jenis_mutasi', 'jumlah']].copy()
-                st.dataframe(df_display, use_container_width=True, height=400)
+                st.subheader("📜 Log Transaksi Terkini")
+                # Menampilkan dataframe dengan formatting warna otomatis pada kolom jenis_mutasi
+                st.dataframe(
+                    df[['tanggal', 'nama_barang', 'jenis_mutasi', 'jumlah']],
+                    use_container_width=True,
+                    height=450,
+                    column_config={
+                        "jenis_mutasi": st.column_config.SelectboxColumn(
+                            "Status",
+                            options=["Masuk", "Keluar"],
+                            required=True,
+                        ),
+                        "jumlah": st.column_config.NumberColumn("Quantity", format="%d 📦")
+                    }
+                )
                 
             with col_sub:
-                st.markdown("### 📊 Ringkasan Inventaris")
-                stok_df.columns = ['Nama Barang', 'Saldo Akhir']
-                st.table(stok_df)
+                st.subheader("📊 Saldo Gudang")
+                st.dataframe(stok_df, use_container_width=True, height=450, hide_index=True)
         else:
-            st.info("Sistem siap. Belum ada aktivitas yang terdeteksi.")
+            st.info("Database kosong. Silakan tambahkan data melalui sidebar.")
 
     except Exception as e:
-        st.error(f"System Error: {e}")
+        st.error(f"Koneksi Database Terputus: {e}")
