@@ -13,7 +13,8 @@ def init_connection():
         user=st.secrets["tidb"]["user"],
         password=st.secrets["tidb"]["password"],
         database=st.secrets["tidb"]["database"],
-        ssl_verify_cert=True
+        ssl_verify_cert=False, # Set ke False jika tidak ingin repot upload file .pem
+        use_pure=True          # Menggunakan implementasi Python murni agar lebih stabil di Cloud
     )
 
 conn = init_connection()
