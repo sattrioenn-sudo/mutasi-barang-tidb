@@ -60,11 +60,10 @@ if not st.session_state["logged_in"]:
                 else: st.error("Akses Ditolak")
 
 else:
-    # --- FUNGSI PARSING DATA (PECAH 5 BAGIAN) ---
+    # --- FUNGSI PARSING DATA ---
     def parse_inventory_name(val):
         parts = val.split('|')
         parts = [p.strip() for p in parts]
-        # Urutan: 0:SKU, 1:Nama, 2:Satuan, 3:Creator, 4:Editor
         while len(parts) < 5:
             parts.append("-")
         return parts
@@ -74,7 +73,7 @@ else:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         st.markdown("---")
         
-        # 1. TAMBAH DATA (Input Pertama Kali)
+        # 1. TAMBAH DATA
         with st.expander("➕ Tambah Transaksi"):
             with st.form("input_form", clear_on_submit=True):
                 sku_in = st.text_input("SKU")
@@ -89,7 +88,7 @@ else:
                         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         sku_f = sku_in if sku_in else "-"
                         user_now = st.session_state['current_user']
-                        # SIMPAN: SKU | Nama | Satuan | Creator | Editor (Editor awal sama dengan creator)
+                        # SKU | Nama | Satuan | Creator | Editor
                         full_entry = f"{sku_f} | {nama_in} | {sat_in} | {user_now} | {user_now}"
                         
                         conn = init_connection(); cur = conn.cursor()
@@ -97,7 +96,7 @@ else:
                         conn.commit(); conn.close()
                         st.rerun()
 
-        # 2. EDIT DATA (Mencatat Siapa yang Mengubah)
+        # 2. EDIT DATA (SEKARANG UPDATE WAKTU JUGA)
         with st.expander("📝 Edit Transaksi"):
             try:
                 conn = init_connection()
@@ -118,15 +117,20 @@ else:
                         e_qty = st.number_input("Qty", min_value=1, value=int(row_to_edit['jumlah']))
                         
                         if st.form_submit_button("UPDATE DATA", use_container_width=True):
+                            # Ambil waktu sekarang untuk update
+                            tz = pytz.timezone('Asia/Jakarta')
+                            edit_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                            
                             user_now = st.session_state['current_user']
-                            creator = p_old[3] # Tetap pertahankan Creator asli
-                            # UPDATE STRING: SKU | Nama | Satuan | Creator asli | Editor Sekarang
+                            creator = p_old[3]
                             new_entry = f"{e_sku} | {e_nama} | {e_sat} | {creator} | {user_now}"
                             
                             conn = init_connection(); cur = conn.cursor()
-                            cur.execute("UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s WHERE id=%s", (new_entry, e_aksi, e_qty, int(selected_id)))
+                            # PERUBAHAN DISINI: Menambahkan tanggal=%s agar waktu berubah saat edit
+                            query = "UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s, tanggal=%s WHERE id=%s"
+                            cur.execute(query, (new_entry, e_aksi, e_qty, edit_time, int(selected_id)))
                             conn.commit(); conn.close()
-                            st.success(f"ID {selected_id} Diperbarui oleh {user_now}")
+                            st.success(f"ID {selected_id} Updated at {edit_time}!")
                             st.rerun()
             except Exception as e: st.write(f"Error: {e}")
 
@@ -159,8 +163,8 @@ else:
             df['SKU'] = split_results.str[0]
             df['Item Name'] = split_results.str[1]
             df['Unit'] = split_results.str[2]
-            df['Input By'] = split_results.str[3] # Creator
-            df['Edited By'] = split_results.str[4] # Editor terakhir
+            df['Input By'] = split_results.str[3]
+            df['Edited By'] = split_results.str[4]
             
             df['tanggal'] = pd.to_datetime(df['tanggal'])
             df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
@@ -170,21 +174,21 @@ else:
 
             # Metrics
             c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><small>Records</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+            with c1: st.markdown(f"<div class='metric-card'><small>Total Record</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
             with c2: st.markdown(f"<div class='metric-card'><small>Total Unit</small><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
             with c3: st.markdown(f"<div class='metric-card'><small>Jenis Barang</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
 
             st.write("---")
 
-            # Tabel Log dengan Kolom Audit
+            # Tabel Log
             st.markdown("### 📜 Log Transaksi & Audit")
             st.dataframe(df[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']], 
                          use_container_width=True, hide_index=True,
                          column_config={
                              "id": "ID",
-                             "tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm"),
-                             "Input By": st.column_config.TextColumn("Dibuat Oleh", help="User yang pertama menginput"),
-                             "Edited By": st.column_config.TextColumn("Diedit Oleh", help="User yang terakhir merubah"),
+                             "tanggal": st.column_config.DatetimeColumn("Terakhir Update", format="D MMM, HH:mm"),
+                             "Input By": "Dibuat Oleh",
+                             "Edited By": "Diedit Oleh",
                              "jenis_mutasi": "Aksi",
                              "jumlah": "Qty"
                          })
