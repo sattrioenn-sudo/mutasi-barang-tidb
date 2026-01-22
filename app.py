@@ -79,7 +79,7 @@ else:
                         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         user = st.session_state['current_user']
                         
-                        # --- FIX URUTAN SIMPAN: SKU | NAMA | SATUAN | USER ---
+                        # FORMAT PENYIMPANAN: SKU | NAMA | SATUAN | USER
                         sku_final = sku_in if sku_in else "-"
                         full_entry = f"{sku_final} | {nama_in} | {sat_in} | {user}"
                         
@@ -108,58 +108,3 @@ else:
     st.markdown("<h1 style='color: white;'>Inventory Overview</h1>", unsafe_allow_html=True)
     
     try:
-        conn = init_connection()
-        df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn); conn.close()
-
-        if not df.empty:
-            # --- FIX LOGIKA PECAH DATA (INDEXING) ---
-            # Menggunakan expand=True untuk memisahkan kolom secara eksplisit
-            split_cols = df['nama_barang'].str.split(' | ', expand=True)
-            
-            # Kita petakan index kolom hasil split ke nama kolom yang benar
-            # Index 0 = SKU, Index 1 = Nama Item, Index 2 = Satuan, Index 3 = User
-            df['SKU'] = split_cols[0] if 0 in split_cols.columns else "-"
-            df['Item Name'] = split_cols[1] if 1 in split_cols.columns else "-"
-            df['Unit'] = split_cols[2] if 2 in split_cols.columns else "-"
-            df['PIC'] = split_cols[3] if 3 in split_cols.columns else "System"
-            
-            df['tanggal'] = pd.to_datetime(df['tanggal'])
-            df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
-            
-            # Saldo Stok dihitung berdasarkan Nama Item yang sudah dipisah dengan benar
-            stok_df = df.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
-            stok_df.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
-
-            # Metrics
-            c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><small>Total Record</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
-            with c2: st.markdown(f"<div class='metric-card'><small>Total Unit</small><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><small>Jenis Barang</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
-
-            st.write("---")
-
-            # Tabel Log
-            col_a, col_b = st.columns([2.3, 1.2])
-            
-            with col_a:
-                st.markdown("### 📜 Log Transaksi Terakhir")
-                st.dataframe(df[['tanggal', 'SKU', 'Item Name', 'Unit', 'PIC', 'jenis_mutasi', 'jumlah']], 
-                             use_container_width=True, hide_index=True,
-                             column_config={
-                                 "tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm"),
-                                 "Item Name": st.column_config.TextColumn("Nama Barang", width="medium"),
-                                 "Unit": "Satuan",
-                                 "PIC": "User",
-                                 "jenis_mutasi": "Aksi",
-                                 "jumlah": "Qty"
-                             })
-            
-            with col_b:
-                st.markdown("### 📊 Ringkasan Stok")
-                st.dataframe(stok_df, use_container_width=True, hide_index=True,
-                             column_config={
-                                 "Sisa Stok": st.column_config.NumberColumn(format="%d 📦")
-                             })
-        else:
-            st.info("Belum ada data transaksi yang tersimpan.")
-    except Exception as e: st.error(f"Error Sistem: {e}")
