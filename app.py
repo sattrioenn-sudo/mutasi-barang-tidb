@@ -97,6 +97,9 @@ else:
                 
                 if st.form_submit_button("Simpan", use_container_width=True):
                     if n:
+                        # 1. Ambil Waktu Jakarta (WIB)
+                        tz_jkt = pytz.timezone('Asia/Jakarta')
+                        waktu_sekarang = datetime.now(tz_jkt).strftime('%Y-%m-%d %H:%M:%S')
                         # PROSES PENGGABUNGAN: [SKU] Nama (Satuan)
                         # Contoh hasil: [BRG-01] Kursi (Pcs)
                         nama_lengkap = f"[{sku}] {n} ({satuan})" if sku else f"{n} ({satuan})"
