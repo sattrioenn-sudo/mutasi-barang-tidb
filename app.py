@@ -60,16 +60,16 @@ if not st.session_state["logged_in"]:
                 else: st.error("Akses Ditolak")
 
 else:
-    # --- SIDEBAR (INPUT & DELETE) ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         st.markdown("---")
         
         with st.expander("➕ Tambah Transaksi", expanded=True):
             with st.form("input_form", clear_on_submit=True):
-                sku_in = st.text_input("SKU", placeholder="Contoh: BRG-001")
-                nama_in = st.text_input("Nama Item", placeholder="Contoh: Kursi Kantor")
-                sat_in = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg"])
+                sku_in = st.text_input("SKU", placeholder="BRG-001")
+                nama_in = st.text_input("Nama Item", placeholder="Kursi Kantor")
+                sat_in = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"])
                 j_in = st.selectbox("Aksi", ["Masuk", "Keluar"])
                 q_in = st.number_input("Qty", min_value=1)
                 
@@ -79,10 +79,9 @@ else:
                         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         user = st.session_state['current_user']
                         
-                        # FORMAT TRIPLE SPLIT: SKU | NAMA (SATUAN) | USER
-                        # Jika SKU kosong, kita beri tanda '-'
+                        # FORMAT: SKU | NAMA | SATUAN | USER
                         sku_final = sku_in if sku_in else "-"
-                        full_entry = f"{sku_final} | {nama_in} ({sat_in}) | {user}"
+                        full_entry = f"{sku_final} | {nama_in} | {sat_in} | {user}"
                         
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_entry, j_in, q_in, now))
@@ -93,7 +92,7 @@ else:
             try:
                 conn = init_connection()
                 items = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn); conn.close()
-                target = st.selectbox("Pilih Baris Data:", items['nama_barang'])
+                target = st.selectbox("Pilih Baris:", items['nama_barang'])
                 if st.button("HAPUS PERMANEN", use_container_width=True):
                     conn = init_connection(); cur = conn.cursor()
                     cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
@@ -113,43 +112,44 @@ else:
         df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn); conn.close()
 
         if not df.empty:
-            # --- LOGIKA TRIPLE SPLIT ---
-            # Memecah 'nama_barang' menjadi SKU, Nama Item, dan User
+            # --- LOGIKA QUADRUPLE SPLIT (PECAH 4) ---
             split_cols = df['nama_barang'].str.split(' | ', expand=True)
             
-            # Kita amankan jika ada data lama yang tidak punya 3 bagian
+            # Memasukkan hasil pecah ke kolom virtual (hanya tampil di UI)
             df['SKU'] = split_cols[0] if 0 in split_cols.columns else "-"
             df['Nama Item'] = split_cols[1] if 1 in split_cols.columns else df['nama_barang']
-            df['Input By'] = split_cols[2] if 2 in split_cols.columns else "System"
+            df['Satuan'] = split_cols[2] if 2 in split_cols.columns else "-"
+            df['User'] = split_cols[3] if 3 in split_cols.columns else "System"
             
             df['tanggal'] = pd.to_datetime(df['tanggal'])
             df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
             
-            # Saldo Stok dihitung berdasarkan gabungan SKU + Nama Item agar unik
-            stok_df = df.groupby(['SKU', 'Nama Item'])['adj'].sum().reset_index()
-            stok_df.columns = ['SKU', 'Produk', 'Sisa Stok']
+            # Hitung Saldo berdasarkan SKU, Nama, dan Satuan
+            stok_df = df.groupby(['SKU', 'Nama Item', 'Satuan'])['adj'].sum().reset_index()
+            stok_df.columns = ['SKU', 'Produk', 'Unit', 'Sisa Stok']
 
             # Metrics
             c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><small>Records</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+            with c1: st.markdown(f"<div class='metric-card'><small>Total Record</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
             with c2: st.markdown(f"<div class='metric-card'><small>Total Unit</small><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><small>Items</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><small>Jenis Item</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
 
             st.write("---")
 
             # Layout Tabel
-            col_left, col_right = st.columns([2, 1])
+            col_left, col_right = st.columns([2.2, 1.2])
             
             with col_left:
                 st.markdown("### 📜 Log Transaksi")
-                st.dataframe(df[['tanggal', 'SKU', 'Nama Item', 'Input By', 'jenis_mutasi', 'jumlah']], 
+                st.dataframe(df[['tanggal', 'SKU', 'Nama Item', 'Satuan', 'User', 'jenis_mutasi', 'jumlah']], 
                              use_container_width=True, hide_index=True,
                              column_config={
                                  "tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm"),
                                  "SKU": st.column_config.TextColumn("SKU", width="small"),
-                                 "Nama Item": st.column_config.TextColumn("Nama Item", width="medium"),
-                                 "Input By": st.column_config.TextColumn("User", width="small"),
-                                 "jenis_mutasi": "Aksi",
+                                 "Nama Item": st.column_config.TextColumn("Item Name", width="medium"),
+                                 "Satuan": st.column_config.TextColumn("Unit", width="small"),
+                                 "User": st.column_config.TextColumn("PIC", width="small"),
+                                 "jenis_mutasi": "Status",
                                  "jumlah": "Qty"
                              })
             
@@ -158,6 +158,7 @@ else:
                 st.dataframe(stok_df, use_container_width=True, hide_index=True,
                              column_config={
                                  "SKU": st.column_config.TextColumn("SKU", width="small"),
+                                 "Unit": st.column_config.TextColumn("Unit", width="small"),
                                  "Sisa Stok": st.column_config.NumberColumn(format="%d 📦")
                              })
         else:
