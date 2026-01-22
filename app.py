@@ -58,24 +58,29 @@ def init_connection():
     )
 
 # --- SISTEM LOGIN ---
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-
 if not st.session_state["logged_in"]:
-    # Tampilan Login (Sederhana tapi Rapi)
-    _, col, _ = st.columns([1, 1, 1])
-    with col:
-        st.write("# 🔐 Login")
-        with st.form("login"):
-            u = st.text_input("Username")
-            p = st.text_input("Password", type="password")
-            if st.form_submit_button("Masuk", use_container_width=True):
-                if u == st.secrets["auth"]["username"] and p == st.secrets["auth"]["password"]:
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+    _, col2, _ = st.columns([1, 1.2, 1])
+    with col2:
+        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align:center; color:#4facfe;'>🔐 INV-PRIME ACCESS</h2>", unsafe_allow_html=True)
+        
+        with st.form("login_form"):
+            u_input = st.text_input("Username")
+            p_input = st.text_input("Password", type="password")
+            
+            if st.form_submit_button("AUTHENTICATE", use_container_width=True):
+                # Mengambil daftar semua user dari Secrets
+                users_list = st.secrets["auth_users"] 
+                
+                # Cek apakah username ada dan password cocok
+                if u_input in users_list and p_input == users_list[u_input]:
                     st.session_state["logged_in"] = True
+                    st.session_state["current_user"] = u_input # Simpan siapa yang login
                     st.rerun()
                 else:
-                    st.error("Kredensial Salah")
-else:
+                    st.error("Kredensial salah atau user tidak terdaftar!")
+        st.markdown("</div>", unsafe_allow_html=True)
     # --- DASHBOARD UTAMA ---
     with st.sidebar:
         st.title("🚀 INV-PRIME")
