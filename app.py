@@ -24,6 +24,8 @@ st.markdown("""
         background: linear-gradient(90deg, #38bdf8 0%, #2563eb 100%);
         color: white; border-radius: 8px; border: none; font-weight: 600;
     }
+    /* Warna Alert Merah untuk st.table */
+    .low-stock { background-color: #7f1d1d !important; color: white !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -73,7 +75,6 @@ else:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         st.markdown("---")
         
-        # 1. TAMBAH DATA
         with st.expander("➕ Tambah Transaksi"):
             with st.form("input_form", clear_on_submit=True):
                 sku_in = st.text_input("SKU")
@@ -88,7 +89,6 @@ else:
                         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         sku_f = sku_in if sku_in else "-"
                         user_now = st.session_state['current_user']
-                        # SKU | Nama | Satuan | Creator | Editor
                         full_entry = f"{sku_f} | {nama_in} | {sat_in} | {user_now} | {user_now}"
                         
                         conn = init_connection(); cur = conn.cursor()
@@ -96,18 +96,15 @@ else:
                         conn.commit(); conn.close()
                         st.rerun()
 
-        # 2. EDIT DATA (SEKARANG UPDATE WAKTU JUGA)
         with st.expander("📝 Edit Transaksi"):
             try:
                 conn = init_connection()
                 raw_data = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah FROM inventory ORDER BY tanggal DESC", conn)
                 conn.close()
-                
                 if not raw_data.empty:
                     selected_id = st.selectbox("Pilih ID Data:", raw_data['id'])
                     row_to_edit = raw_data[raw_data['id'] == selected_id].iloc[0]
                     p_old = parse_inventory_name(row_to_edit['nama_barang'])
-                    
                     with st.form("edit_form"):
                         e_sku = st.text_input("SKU", value=p_old[0])
                         e_nama = st.text_input("Nama Barang", value=p_old[1])
@@ -115,26 +112,18 @@ else:
                                            index=["Pcs", "Box", "Set", "Kg", "Liter", "Meter"].index(p_old[2]) if p_old[2] in ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"] else 0)
                         e_aksi = st.selectbox("Aksi", ["Masuk", "Keluar"], index=0 if row_to_edit['jenis_mutasi'] == "Masuk" else 1)
                         e_qty = st.number_input("Qty", min_value=1, value=int(row_to_edit['jumlah']))
-                        
                         if st.form_submit_button("UPDATE DATA", use_container_width=True):
-                            # Ambil waktu sekarang untuk update
                             tz = pytz.timezone('Asia/Jakarta')
                             edit_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-                            
                             user_now = st.session_state['current_user']
-                            creator = p_old[3]
-                            new_entry = f"{e_sku} | {e_nama} | {e_sat} | {creator} | {user_now}"
-                            
+                            new_entry = f"{e_sku} | {e_nama} | {e_sat} | {p_old[3]} | {user_now}"
                             conn = init_connection(); cur = conn.cursor()
-                            # PERUBAHAN DISINI: Menambahkan tanggal=%s agar waktu berubah saat edit
                             query = "UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s, tanggal=%s WHERE id=%s"
                             cur.execute(query, (new_entry, e_aksi, e_qty, edit_time, int(selected_id)))
                             conn.commit(); conn.close()
-                            st.success(f"ID {selected_id} Updated at {edit_time}!")
                             st.rerun()
             except Exception as e: st.write(f"Error: {e}")
 
-        # 3. HAPUS DATA
         with st.expander("🗑️ Hapus Data"):
             try:
                 conn = init_connection()
@@ -160,41 +149,46 @@ else:
 
         if not df.empty:
             split_results = df['nama_barang'].apply(parse_inventory_name)
-            df['SKU'] = split_results.str[0]
-            df['Item Name'] = split_results.str[1]
-            df['Unit'] = split_results.str[2]
-            df['Input By'] = split_results.str[3]
+            df['SKU'] = split_results.str[0]; df['Item Name'] = split_results.str[1]
+            df['Unit'] = split_results.str[2]; df['Input By'] = split_results.str[3]
             df['Edited By'] = split_results.str[4]
-            
             df['tanggal'] = pd.to_datetime(df['tanggal'])
             df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
             
+            # --- RINGKASAN STOK DENGAN ALERT WARNA ---
+            st.markdown("### 📊 Ringkasan Stok (Low Stock Alert < 5)")
             stok_df = df.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
             stok_df.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
 
-            # Metrics
-            c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><small>Total Record</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
-            with c2: st.markdown(f"<div class='metric-card'><small>Total Unit</small><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
-            with c3: st.markdown(f"<div class='metric-card'><small>Jenis Barang</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
+            # Fungsi Style untuk mewarnai BARIS
+            def color_low_stock(row):
+                if row['Sisa Stok'] < 5:
+                    return ['background-color: #991b1b; color: white; font-weight: bold'] * len(row)
+                return [''] * len(row)
+
+            # Tampilkan dengan styling (menggunakan st.dataframe dengan style)
+            st.dataframe(stok_df.style.apply(color_low_stock, axis=1), 
+                         use_container_width=True, hide_index=True)
 
             st.write("---")
 
-            # Tabel Log
+            # --- TABEL LOG TRANSAKSI ---
             st.markdown("### 📜 Log Transaksi & Audit")
             st.dataframe(df[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']], 
                          use_container_width=True, hide_index=True,
                          column_config={
                              "id": "ID",
                              "tanggal": st.column_config.DatetimeColumn("Terakhir Update", format="D MMM, HH:mm"),
-                             "Input By": "Dibuat Oleh",
-                             "Edited By": "Diedit Oleh",
-                             "jenis_mutasi": "Aksi",
-                             "jumlah": "Qty"
+                             "Input By": "Input", "Edited By": "Edit",
+                             "jenis_mutasi": "Aksi", "jumlah": "Qty"
                          })
             
-            st.markdown("### 📊 Ringkasan Stok")
-            st.dataframe(stok_df, use_container_width=True, hide_index=True)
+            # Metrics
+            st.write("---")
+            c1, c2, c3 = st.columns(3)
+            with c1: st.markdown(f"<div class='metric-card'><small>Total Record</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+            with c2: st.markdown(f"<div class='metric-card'><small>Total Unit</small><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><small>Jenis Barang</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
             
         else:
             st.info("Data kosong.")
