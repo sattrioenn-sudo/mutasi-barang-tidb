@@ -108,20 +108,36 @@ else:
                         conn.close()
                         st.rerun()
 
-        with st.expander("🗑️ Management Data"):
+       with st.expander("🗑️ Management Data"):
             try:
                 conn = init_connection()
                 items = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn)
                 conn.close()
-                target = st.selectbox("Pilih Master Barang", items['nama_barang'])
-                if st.button("Hapus Seluruh Data Barang"):
-                    conn = init_connection()
-                    cur = conn.cursor()
-                    cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
-                    conn.commit()
-                    conn.close()
-                    st.rerun()
-            except: pass
+                
+                if not items.empty:
+                    # Menggunakan label yang lebih singkat agar tidak numpuk
+                    target = st.selectbox("Pilih Barang:", items['nama_barang'], key="del_select")
+                    
+                    st.write("") # Spasi kecil
+                    
+                    # Membuat dua kolom kecil di sidebar agar tombol tidak memenuhi layar
+                    c_del1, c_del2 = st.columns([1, 1])
+                    
+                    # Tambahkan konfirmasi checkbox agar tidak sengaja terhapus
+                    confirm = st.checkbox("Yakin hapus?", key="confirm_del")
+                    
+                    if st.button("🔥 HAPUS", use_container_width=True, disabled=not confirm):
+                        conn = init_connection()
+                        cur = conn.cursor()
+                        cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
+                        conn.commit()
+                        conn.close()
+                        st.success("Terhapus!")
+                        st.rerun()
+                else:
+                    st.write("Data kosong")
+            except: 
+                st.write("Gagal memuat data")
 
     # Dashboard Content
     st.markdown("<h1 style='margin-bottom:0;'>Real-time Analytics</h1>", unsafe_allow_html=True)
