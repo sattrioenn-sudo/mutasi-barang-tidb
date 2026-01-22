@@ -119,6 +119,7 @@ else:
         """, unsafe_allow_html=True)
         st.markdown("---")
         
+        # --- TAB INPUT ---
         with st.expander("➕ Create Transaction", expanded=True):
             with st.form("input", clear_on_submit=True):
                 sku = st.text_input("SKU", placeholder="BRG-001")
@@ -137,54 +138,34 @@ else:
                         st.success("Entry Saved!")
                         st.rerun()
 
+        # --- FITUR HAPUS (YANG TADI HILANG) ---
+        with st.expander("🗑️ Danger Zone"):
+            try:
+                conn = init_connection()
+                # Ambil daftar barang unik untuk dihapus
+                items_df = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn)
+                conn.close()
+                
+                if not items_df.empty:
+                    target = st.selectbox("Select Item to Delete:", items_df['nama_barang'])
+                    st.warning("Action cannot be undone!")
+                    conf = st.checkbox("I confirm to delete this item")
+                    
+                    if st.button("DELETE ALL DATA FOR THIS ITEM", use_container_width=True, disabled=not conf):
+                        conn = init_connection()
+                        cur = conn.cursor()
+                        # Hapus semua transaksi untuk barang tersebut
+                        cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
+                        conn.commit()
+                        conn.close()
+                        st.success(f"Deleted: {target}")
+                        st.rerun()
+                else:
+                    st.info("No items found.")
+            except Exception as e:
+                st.error(f"Error Loading List: {e}")
+
+        st.markdown("---")
         if st.button("LOGOUT", use_container_width=True):
             st.session_state["logged_in"] = False
             st.rerun()
-
-    # --- MAIN CONTENT ---
-    st.markdown("<h1 style='color: white;'>Inventory Overview</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='color: #94a3b8;'>Real-time analytics and stock monitoring</p>", unsafe_allow_html=True)
-
-    try:
-        conn = init_connection()
-        df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn)
-        conn.close()
-
-        if not df.empty:
-            df['tanggal'] = pd.to_datetime(df['tanggal'])
-            df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
-            stok_df = df.groupby('nama_barang')['adj'].sum().reset_index()
-            stok_df.columns = ['Item', 'Stock']
-
-            # Row Metrics (Modern Cards)
-            m1, m2, m3 = st.columns(3)
-            with m1: st.markdown(f"<div class='metric-card'><p style='color:#94a3b8;'>Total Entries</p><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
-            with m2: 
-                total_vol = int(df['jumlah'].sum())
-                st.markdown(f"<div class='metric-card'><p style='color:#94a3b8;'>Volume Movement</p><h2>{total_vol}</h2></div>", unsafe_allow_html=True)
-            with m3:
-                top_item = stok_df.iloc[stok_df['Stock'].idxmax()]['Item'] if not stok_df.empty else "-"
-                st.markdown(f"<div class='metric-card'><p style='color:#94a3b8;'>Top Stock</p><h2 style='font-size:18px !important;'>{top_item}</h2></div>", unsafe_allow_html=True)
-
-            st.write("###")
-
-            # Layout Tables
-            c1, c2 = st.columns([1.8, 1.2])
-            with c1:
-                st.markdown("### 📜 Activity Log")
-                st.dataframe(df[['tanggal', 'nama_barang', 'jenis_mutasi', 'jumlah']], use_container_width=True, hide_index=True,
-                    column_config={
-                        "tanggal": st.column_config.DatetimeColumn("Date & Time", format="D MMM, HH:mm"),
-                        "nama_barang": "Product Detail",
-                        "jenis_mutasi": "Status",
-                        "jumlah": st.column_config.NumberColumn("Qty", format="%d 📦")
-                    })
-            with c2:
-                st.markdown("### 📊 Inventory Balance")
-                st.dataframe(stok_df, use_container_width=True, hide_index=True,
-                    column_config={
-                        "Item": "Product",
-                        "Stock": st.column_config.ProgressColumn("Availability", min_value=0, max_value=int(stok_df['Stock'].max()*1.2), format="%d")
-                    })
-        else: st.info("No data available yet.")
-    except Exception as e: st.error(f"Error loading data: {e}")
