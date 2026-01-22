@@ -82,22 +82,27 @@ else:
         
         with st.expander("📥 Input Transaksi", expanded=True):
             with st.form("input", clear_on_submit=True):
-                # Tambahan Input SKU
+                # 1. Input Kode/SKU
                 sku = st.text_input("Kode Barang (SKU)", placeholder="Contoh: BRG-001")
-                n = st.text_input("Nama Barang", placeholder="Contoh: Kursi Kantor")
                 
+                # 2. Input Nama
+                n = st.text_input("Nama Barang", placeholder="Contoh: Kursi")
+                
+                # 3. Input Satuan (Dropdown agar seragam)
+                satuan = st.selectbox("Satuan", ["Pcs", "Box", "Kg", "Liter", "Set", "Meter"])
+                
+                # 4. Input Aksi & Qty
                 j = st.selectbox("Aksi", ["Masuk", "Keluar"])
-                q = st.number_input("Qty", min_value=1)
+                q = st.number_input("Qty", min_value=1, step=1)
                 
                 if st.form_submit_button("Simpan", use_container_width=True):
                     if n:
-                        # Menggabungkan SKU dan Nama jika SKU diisi
-                        # Hasilnya: [BRG-001] Kursi Kantor
-                        nama_lengkap = f"[{sku}] {n}" if sku else n
+                        # PROSES PENGGABUNGAN: [SKU] Nama (Satuan)
+                        # Contoh hasil: [BRG-01] Kursi (Pcs)
+                        nama_lengkap = f"[{sku}] {n} ({satuan})" if sku else f"{n} ({satuan})"
                         
                         conn = init_connection()
                         cur = conn.cursor()
-                        # Masukkan ke kolom nama_barang yang sudah ada
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah) VALUES (%s,%s,%s)", 
                                    (nama_lengkap, j, q))
                         conn.commit()
