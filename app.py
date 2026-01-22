@@ -1,24 +1,38 @@
 import streamlit as st
 import mysql.connector
+import pandas as pd
 
-st.title("Cek Koneksi TiDB")
+# Judul Aplikasi
+st.title("📦 Sistem Mutasi Barang")
 
-# 1. Fungsi untuk ambil kunci dari Secrets dan hubungkan ke TiDB
-def buat_koneksi():
+# Fungsi untuk koneksi menggunakan Secrets (Keamanan)
+def init_connection():
     return mysql.connector.connect(
         host=st.secrets["tidb"]["host"],
         port=st.secrets["tidb"]["port"],
         user=st.secrets["tidb"]["user"],
         password=st.secrets["tidb"]["password"],
         database=st.secrets["tidb"]["database"],
-        ssl_verify_cert=False, # Penting agar tidak error SSL
-        use_pure=True          # Agar lebih stabil di internet
+        ssl_verify_cert=True
     )
 
-# 2. Jalankan fungsi koneksi
-try:
-    conn = buat_koneksi()
-    st.success("✅ Berhasil! Aplikasi sudah terhubung ke TiDB.")
-    conn.close()
-except Exception as e:
-    st.error(f"❌ Gagal Terhubung. Error: {e}")
+conn = init_connection()
+
+# Form Input di Sidebar
+with st.sidebar:
+    st.header("Input Barang")
+    nama = st.text_input("Nama Barang")
+    jenis = st.selectbox("Jenis", ["Masuk", "Keluar"])
+    qty = st.number_input("Jumlah", min_value=1)
+    submit = st.button("Simpan")
+
+if submit:
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah) VALUES (%s, %s, %s)", (nama, jenis, qty))
+    conn.commit()
+    st.success("Data berhasil disimpan!")
+
+# Menampilkan Data
+st.subheader("Riwayat Transaksi")
+df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn)
+st.dataframe(df, use_container_width=True)
