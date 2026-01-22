@@ -1,36 +1,6 @@
 import streamlit as st
 import mysql.connector
 import pandas as pd
-from datetime import datetime
-import pytz # Pustaka untuk zona waktu
-
-# ... (kode koneksi tetap sama) ...
-
-# --- DI DALAM FORM INPUT (BAGIAN SIMPAN) ---
-if st.form_submit_button("Simpan", use_container_width=True):
-    if n:
-        # 1. Ambil Waktu Jakarta (WIB)
-        tz_jkt = pytz.timezone('Asia/Jakarta')
-        waktu_sekarang = datetime.now(tz_jkt).strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Format SKU + Nama + Satuan yang sudah kita buat tadi
-        nama_lengkap = f"[{sku}] {n} ({satuan})" if sku else f"{n} ({satuan})"
-        
-        try:
-            conn = init_connection()
-            cur = conn.cursor()
-            
-            # 2. Masukkan waktu_sekarang secara manual ke kolom tanggal
-            # Ini akan menimpa (override) waktu default database
-            query = "INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s, %s, %s, %s)"
-            cur.execute(query, (nama_lengkap, j, q, waktu_sekarang))
-            
-            conn.commit()
-            conn.close()
-            st.success(f"Tersimpan pada: {waktu_sekarang}")
-            st.rerun()
-        except Exception as e:
-            st.error(f"Gagal simpan: {e}")
 
 # 1. Konfigurasi Halaman (Harus paling atas)
 st.set_page_config(page_title="Inventory Prime Pro", page_icon="🚀", layout="wide")
