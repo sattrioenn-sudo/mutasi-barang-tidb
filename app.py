@@ -2,47 +2,52 @@ import streamlit as st
 import mysql.connector
 import pandas as pd
 
-# 1. Konfigurasi Dasar
-st.set_page_config(page_title="Inventory Pro System", page_icon="📦", layout="wide")
+# 1. Page Configuration
+st.set_page_config(page_title="Inventory Prime", page_icon="🚀", layout="wide")
 
-# 2. Custom CSS untuk Tampilan Keren (Glassmorphism)
+# 2. Ultra Modern CSS
 st.markdown("""
     <style>
-    /* Background utama */
+    /* Mengatur Font dan Background */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+    html, body, [class*="st-"] { font-family: 'Inter', sans-serif; }
+    
     .stApp {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: radial-gradient(circle at top right, #1a1a2e, #16213e);
+        color: #ffffff;
     }
-    
-    /* Container Login */
-    .login-box {
-        background: rgba(255, 255, 255, 0.2);
-        border-radius: 16px;
-        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
-        border: 1px solid rgba(255, 255, 255, 0.3);
-        padding: 40px;
-        color: white;
-    }
-    
-    /* Custom Button */
-    .stButton>button {
-        width: 100%;
-        border-radius: 20px;
-        border: none;
-        background-color: #4facfe;
-        color: white;
-        font-weight: bold;
+
+    /* Card Style untuk Metrics */
+    .metric-card {
+        background: rgba(255, 255, 255, 0.05);
+        padding: 20px;
+        border-radius: 15px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        text-align: center;
         transition: 0.3s;
     }
-    .stButton>button:hover {
-        background-color: #00f2fe;
-        transform: scale(1.02);
+    .metric-card:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: #4facfe;
     }
+
+    /* Glassmorphism Login Container */
+    .login-container {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(20px);
+        padding: 40px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+    }
+    
+    /* Status Badge */
+    .badge-masuk { background-color: #28a745; color: white; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
+    .badge-keluar { background-color: #dc3545; color: white; padding: 4px 8px; border-radius: 6px; font-size: 12px; }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. Fungsi Koneksi (Database Tetap Sama)
+# 3. Connection Function
 def init_connection():
     return mysql.connector.connect(
         host=st.secrets["tidb"]["host"],
@@ -54,106 +59,111 @@ def init_connection():
         use_pure=True
     )
 
-# 4. Logika Session State (Status Login)
+# 4. Session State for Auth
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# --- HALAMAN LOGIN ---
+# --- UI LOGIKA LOGIN ---
 if not st.session_state["logged_in"]:
     st.markdown("<br><br><br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 1.5, 1])
-    
+    _, col2, _ = st.columns([1, 1.2, 1])
     with col2:
-        st.markdown("""
-            <div class='login-box'>
-                <h1 style='text-align: center; margin-bottom: 0;'>📦 INV-PRO</h1>
-                <p style='text-align: center; opacity: 0.8;'>Sistem Mutasi Barang Terpadu</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<div class='login-container'>", unsafe_allow_html=True)
+        st.markdown("<h1 style='text-align:center; color:#4facfe;'>🚀 INVENTORY PRIME</h1>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center; opacity:0.7;'>Enterprise Resources Monitoring</p>", unsafe_allow_html=True)
         
         with st.form("login_form"):
-            user_input = st.text_input("Username")
-            pass_input = st.text_input("Password", type="password")
-            btn_login = st.form_submit_button("MASUK KE SISTEM")
-            
-            if btn_login:
-                if user_input == st.secrets["auth"]["username"] and pass_input == st.secrets["auth"]["password"]:
+            u = st.text_input("Username")
+            p = st.text_input("Password", type="password")
+            if st.form_submit_button("AUTHENTICATE", use_container_width=True):
+                if u == st.secrets["auth"]["username"] and p == st.secrets["auth"]["password"]:
                     st.session_state["logged_in"] = True
                     st.rerun()
                 else:
-                    st.error("Akses Ditolak: Kredensial Salah")
+                    st.error("Invalid Credentials")
+        st.markdown("</div>", unsafe_allow_html=True)
 
-# --- HALAMAN UTAMA (SESUDAH LOGIN) ---
+# --- UI DASHBOARD UTAMA ---
 else:
-    # Sidebar Area
+    # Sidebar Navigation
     with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/408/408710.png", width=100)
-        st.title("Control Panel")
-        st.write(f"User: **{st.secrets['auth']['username']}**")
-        
-        if st.button("🚪 Logout"):
+        st.markdown("<h2 style='color:#4facfe;'>INV-PRIME</h2>", unsafe_allow_html=True)
+        st.write(f"Active Session: `{st.secrets['auth']['username']}`")
+        if st.button("🚪 Secure Logout"):
             st.session_state["logged_in"] = False
             st.rerun()
         
         st.markdown("---")
-        st.header("➕ Tambah Mutasi")
-        with st.form("input_form", clear_on_submit=True):
-            nama = st.text_input("Nama Barang")
-            jenis = st.selectbox("Jenis", ["Masuk", "Keluar"])
-            qty = st.number_input("Jumlah", min_value=1)
-            btn_simpan = st.form_submit_button("Simpan Data")
-            
-            if btn_simpan and nama:
-                conn = init_connection()
-                curr = conn.cursor()
-                curr.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah) VALUES (%s,%s,%s)", (nama, jenis, qty))
-                conn.commit()
-                conn.close()
-                st.success("Tercatat!")
-                st.rerun()
+        with st.expander("📥 Input Data Baru", expanded=True):
+            with st.form("input_form", clear_on_submit=True):
+                n = st.text_input("Nama Barang")
+                j = st.selectbox("Aksi", ["Masuk", "Keluar"])
+                q = st.number_input("Qty", min_value=1)
+                if st.form_submit_button("Submit Transaction"):
+                    if n:
+                        conn = init_connection()
+                        cur = conn.cursor()
+                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah) VALUES (%s,%s,%s)", (n,j,q))
+                        conn.commit()
+                        conn.close()
+                        st.rerun()
 
-        st.markdown("---")
-        st.header("🗑️ Hapus Master")
-        try:
-            conn = init_connection()
-            df_list = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn)
-            conn.close()
-            
-            item_hapus = st.selectbox("Pilih Barang", df_list['nama_barang'])
-            if st.button("Hapus Permanen"):
+        with st.expander("🗑️ Management Data"):
+            try:
                 conn = init_connection()
-                curr = conn.cursor()
-                curr.execute("DELETE FROM inventory WHERE nama_barang = %s", (item_hapus,))
-                conn.commit()
+                items = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn)
                 conn.close()
-                st.warning(f"{item_hapus} Dihapus")
-                st.rerun()
-        except:
-            st.write("Belum ada data")
+                target = st.selectbox("Pilih Master Barang", items['nama_barang'])
+                if st.button("Hapus Seluruh Data Barang"):
+                    conn = init_connection()
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
+                    conn.commit()
+                    conn.close()
+                    st.rerun()
+            except: pass
 
-    # Main Content Area
-    st.markdown("<h2 style='color: white;'>📊 Dashboard Monitor</h2>", unsafe_allow_html=True)
-    
+    # Dashboard Content
+    st.markdown("<h1 style='margin-bottom:0;'>Real-time Analytics</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='opacity:0.6;'>Monitoring mutasi barang langsung dari database TiDB Cloud</p>", unsafe_allow_html=True)
+
     try:
         conn = init_connection()
         df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn)
         conn.close()
 
         if not df.empty:
-            # Kalkulasi Stok
+            # Kalkulasi Data Inovatif
             df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
             stok_df = df.groupby('nama_barang')['adj'].sum().reset_index()
-            stok_df.columns = ['Barang', 'Stok Saat Ini']
+            
+            # Baris Metrics (KPI Cards)
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(f"<div class='metric-card'><h3>Total Transaksi</h3><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+            with c2:
+                top_item = stok_df.iloc[stok_df['adj'].idxmax()]['nama_barang'] if not stok_df.empty else "-"
+                st.markdown(f"<div class='metric-card'><h3>Stok Terbanyak</h3><h2>{top_item}</h2></div>", unsafe_allow_html=True)
+            with c3:
+                total_qty = df['jumlah'].sum()
+                st.markdown(f"<div class='metric-card'><h3>Volume Barang</h3><h2>{total_qty}</h2></div>", unsafe_allow_html=True)
 
-            # Tampilan Metric & Tabel
-            m1, m2 = st.columns([2, 1])
-            with m1:
-                st.markdown("### Riwayat Transaksi")
-                st.dataframe(df[['tanggal', 'nama_barang', 'jenis_mutasi', 'jumlah']], use_container_width=True)
-            with m2:
-                st.markdown("### Ringkasan Stok")
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # Baris Tabel Transaksi & Stok
+            col_main, col_sub = st.columns([2, 1])
+            with col_main:
+                st.markdown("### 📜 Log Aktivitas Terbaru")
+                # Memberikan warna pada status
+                df_display = df[['tanggal', 'nama_barang', 'jenis_mutasi', 'jumlah']].copy()
+                st.dataframe(df_display, use_container_width=True, height=400)
+                
+            with col_sub:
+                st.markdown("### 📊 Ringkasan Inventaris")
+                stok_df.columns = ['Nama Barang', 'Saldo Akhir']
                 st.table(stok_df)
         else:
-            st.info("Belum ada data di TiDB")
+            st.info("Sistem siap. Belum ada aktivitas yang terdeteksi.")
+
     except Exception as e:
-        st.error(f"Error Database: {e}")
+        st.error(f"System Error: {e}")
