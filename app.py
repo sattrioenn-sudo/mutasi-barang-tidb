@@ -80,7 +80,7 @@ else:
         st.write(f"Logged in: **{st.secrets['auth']['username']}**")
         st.markdown("---")
         
-       with st.expander("📥 Input Transaksi", expanded=True):
+        with st.expander("📥 Input Transaksi", expanded=True):
             with st.form("input", clear_on_submit=True):
                 # Tambahan Input SKU
                 sku = st.text_input("Kode Barang (SKU)", placeholder="Contoh: BRG-001")
