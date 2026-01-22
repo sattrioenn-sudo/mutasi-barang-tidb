@@ -1,38 +1,32 @@
 import streamlit as st
 import mysql.connector
-import pandas as pd
+import socket
 
-# Judul Aplikasi
-st.title("📦 Sistem Mutasi Barang")
+st.title("Diagnosa Koneksi TiDB")
 
-# Fungsi untuk koneksi menggunakan Secrets (Keamanan)
-def init_connection():
-    return mysql.connector.connect(
-        host=st.secrets["tidb"]["host"],
-        port=st.secrets["tidb"]["port"],
-        user=st.secrets["tidb"]["user"],
-        password=st.secrets["tidb"]["password"],
-        database=st.secrets["tidb"]["database"],
-        ssl_verify_cert=True
-    )
+# Cek 1: Apakah internet Streamlit bisa mengenali nama host?
+host_to_check = st.secrets["tidb"]["host"]
+st.write(f"Mencoba mencari alamat: `{host_to_check}`...")
 
-conn = init_connection()
+try:
+    ip_address = socket.gethostbyname(host_to_check)
+    st.success(f"✅ Nama Host dikenali! IP Address: {ip_address}")
+    
+    # Cek 2: Jika nama host dikenali, coba hubungkan database
+    try:
+        conn = mysql.connector.connect(
+            host=st.secrets["tidb"]["host"],
+            port=int(st.secrets["tidb"]["port"]),
+            user=st.secrets["tidb"]["user"],
+            password=st.secrets["tidb"]["password"],
+            database=st.secrets["tidb"]["database"],
+            ssl_verify_cert=False,
+            use_pure=True
+        )
+        st.success("✅ Koneksi Database Berhasil!")
+        conn.close()
+    except Exception as db_err:
+        st.error(f"❌ Nama host benar, tapi gagal login: {db_err}")
 
-# Form Input di Sidebar
-with st.sidebar:
-    st.header("Input Barang")
-    nama = st.text_input("Nama Barang")
-    jenis = st.selectbox("Jenis", ["Masuk", "Keluar"])
-    qty = st.number_input("Jumlah", min_value=1)
-    submit = st.button("Simpan")
-
-if submit:
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah) VALUES (%s, %s, %s)", (nama, jenis, qty))
-    conn.commit()
-    st.success("Data berhasil disimpan!")
-
-# Menampilkan Data
-st.subheader("Riwayat Transaksi")
-df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn)
-st.dataframe(df, use_container_width=True)
+except socket.gaierror:
+    st.error("❌ ERROR: Alamat Host tidak ditemukan di internet. Periksa kembali penulisan HOST di Secrets.")
