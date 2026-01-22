@@ -55,19 +55,22 @@ if not st.session_state["logged_in"]:
         with st.form("login_form"):
             u_input = st.text_input("Username")
             p_input = st.text_input("Password", type="password")
-            if st.form_submit_button("AUTHENTICATE", use_container_width=True):
-                try:
-                    # Ambil daftar user dari Secrets [auth_users]
-                    users_list = st.secrets["auth_users"] 
-                    if u_input in users_list and p_input == str(users_list[u_input]):
+            submit = st.form_submit_button("AUTHENTICATE", use_container_width=True)
+            
+            if submit:
+                # Cek apakah kunci [auth_users] ada di secrets
+                if "auth_users" in st.secrets:
+                    users_list = st.secrets["auth_users"]
+                    # Verifikasi username dan password
+                    if u_input in users_list and str(p_input) == str(users_list[u_input]):
                         st.session_state["logged_in"] = True
                         st.session_state["current_user"] = u_input
                         st.rerun()
                     else:
                         st.error("Username atau Password salah!")
-                except:
-                    st.error("Config [auth_users] belum ada di Secrets!")
-
+                else:
+                    # Pesan ini hanya muncul jika kamu lupa setting di Dashboard Streamlit
+                    st.error("Error: Konfigurasi [auth_users] tidak ditemukan di Dashboard Secrets.")
 # --- DASHBOARD UTAMA (Muncul jika sudah login) ---
 else:
     with st.sidebar:
