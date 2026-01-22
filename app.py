@@ -99,13 +99,28 @@ else:
                 q = st.number_input("Qty", min_value=1, step=1)
                 if st.form_submit_button("SAVE TRANSACTION", use_container_width=True):
                     if n:
+                        # 1. Ambil Waktu Jakarta
                         tz_jkt = pytz.timezone('Asia/Jakarta')
                         waktu_sekarang = datetime.now(tz_jkt).strftime('%Y-%m-%d %H:%M:%S')
-                        nama_lengkap = f"[{sku}] {n} ({satuan})" if sku else f"{n} ({satuan})"
-                        conn = init_connection(); cur = conn.cursor()
-                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (nama_lengkap, j, q, waktu_sekarang))
-                        conn.commit(); conn.close()
-                        st.rerun()
+                        
+                        # 2. Ambil Nama User yang sedang Login
+                        user_aktif = st.session_state.get('current_user', 'Unknown')
+                        
+                        # 3. PROSES PENGGABUNGAN (SKU + Nama + Satuan + USER)
+                        # Hasilnya: [BRG-01] Kursi (Pcs) | User: admin
+                        nama_lengkap = f"[{sku}] {n} ({satuan}) | User: {user_aktif}" if sku else f"{n} ({satuan}) | User: {user_aktif}"
+                        
+                        try:
+                            conn = init_connection()
+                            cur = conn.cursor()
+                            query = "INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s, %s, %s, %s)"
+                            cur.execute(query, (nama_lengkap, j, q, waktu_sekarang))
+                            conn.commit()
+                            conn.close()
+                            st.success(f"Saved by {user_aktif}")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
         with st.expander("🗑️ Danger Zone"):
             try:
