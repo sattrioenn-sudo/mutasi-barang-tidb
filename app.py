@@ -60,11 +60,12 @@ if not st.session_state["logged_in"]:
                 else: st.error("Akses Ditolak")
 
 else:
-    # --- FUNGSI PARSING DATA ---
+    # --- FUNGSI PARSING DATA (PECAH 5 BAGIAN) ---
     def parse_inventory_name(val):
         parts = val.split('|')
         parts = [p.strip() for p in parts]
-        while len(parts) < 4:
+        # Urutan: 0:SKU, 1:Nama, 2:Satuan, 3:Creator, 4:Editor
+        while len(parts) < 5:
             parts.append("-")
         return parts
 
@@ -73,7 +74,7 @@ else:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         st.markdown("---")
         
-        # 1. TAMBAH TRANSAKSI
+        # 1. TAMBAH DATA (Input Pertama Kali)
         with st.expander("➕ Tambah Transaksi"):
             with st.form("input_form", clear_on_submit=True):
                 sku_in = st.text_input("SKU")
@@ -86,61 +87,63 @@ else:
                     if nama_in:
                         tz = pytz.timezone('Asia/Jakarta')
                         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-                        sku_final = sku_in if sku_in else "-"
-                        full_entry = f"{sku_final} | {nama_in} | {sat_in} | {st.session_state['current_user']}"
+                        sku_f = sku_in if sku_in else "-"
+                        user_now = st.session_state['current_user']
+                        # SIMPAN: SKU | Nama | Satuan | Creator | Editor (Editor awal sama dengan creator)
+                        full_entry = f"{sku_f} | {nama_in} | {sat_in} | {user_now} | {user_now}"
                         
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_entry, j_in, q_in, now))
                         conn.commit(); conn.close()
                         st.rerun()
 
-        # 2. EDIT TRANSAKSI (FITUR BARU)
+        # 2. EDIT DATA (Mencatat Siapa yang Mengubah)
         with st.expander("📝 Edit Transaksi"):
             try:
                 conn = init_connection()
-                # Kita ambil data ID dan Nama Barang mentah untuk pilihan
                 raw_data = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah FROM inventory ORDER BY tanggal DESC", conn)
                 conn.close()
                 
                 if not raw_data.empty:
-                    selected_id = st.selectbox("Pilih Data (Berdasarkan ID):", raw_data['id'])
-                    # Ambil data spesifik yang mau diedit
+                    selected_id = st.selectbox("Pilih ID Data:", raw_data['id'])
                     row_to_edit = raw_data[raw_data['id'] == selected_id].iloc[0]
                     p_old = parse_inventory_name(row_to_edit['nama_barang'])
                     
                     with st.form("edit_form"):
-                        e_sku = st.text_input("Edit SKU", value=p_old[0])
-                        e_nama = st.text_input("Edit Nama", value=p_old[1])
-                        e_sat = st.selectbox("Edit Satuan", ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"], index=["Pcs", "Box", "Set", "Kg", "Liter", "Meter"].index(p_old[2]) if p_old[2] in ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"] else 0)
-                        e_aksi = st.selectbox("Edit Aksi", ["Masuk", "Keluar"], index=0 if row_to_edit['jenis_mutasi'] == "Masuk" else 1)
-                        e_qty = st.number_input("Edit Qty", min_value=1, value=int(row_to_edit['jumlah']))
+                        e_sku = st.text_input("SKU", value=p_old[0])
+                        e_nama = st.text_input("Nama Barang", value=p_old[1])
+                        e_sat = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"], 
+                                           index=["Pcs", "Box", "Set", "Kg", "Liter", "Meter"].index(p_old[2]) if p_old[2] in ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"] else 0)
+                        e_aksi = st.selectbox("Aksi", ["Masuk", "Keluar"], index=0 if row_to_edit['jenis_mutasi'] == "Masuk" else 1)
+                        e_qty = st.number_input("Qty", min_value=1, value=int(row_to_edit['jumlah']))
                         
                         if st.form_submit_button("UPDATE DATA", use_container_width=True):
-                            new_entry = f"{e_sku} | {e_nama} | {e_sat} | {p_old[3]}" # Tetap pakai User lama (p_old[3]) atau mau ganti user aktif juga bisa
+                            user_now = st.session_state['current_user']
+                            creator = p_old[3] # Tetap pertahankan Creator asli
+                            # UPDATE STRING: SKU | Nama | Satuan | Creator asli | Editor Sekarang
+                            new_entry = f"{e_sku} | {e_nama} | {e_sat} | {creator} | {user_now}"
                             
                             conn = init_connection(); cur = conn.cursor()
-                            query = "UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s WHERE id=%s"
-                            cur.execute(query, (new_entry, e_aksi, e_qty, int(selected_id)))
+                            cur.execute("UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s WHERE id=%s", (new_entry, e_aksi, e_qty, int(selected_id)))
                             conn.commit(); conn.close()
-                            st.success(f"ID {selected_id} Updated!")
+                            st.success(f"ID {selected_id} Diperbarui oleh {user_now}")
                             st.rerun()
-                else: st.write("Belum ada data")
-            except Exception as e: st.write(f"Error load edit: {e}")
+            except Exception as e: st.write(f"Error: {e}")
 
         # 3. HAPUS DATA
         with st.expander("🗑️ Hapus Data"):
             try:
                 conn = init_connection()
-                items = pd.read_sql("SELECT id, nama_barang FROM inventory ORDER BY tanggal DESC", conn); conn.close()
-                target_id = st.selectbox("Pilih ID Untuk Dihapus:", items['id'])
-                if st.button("HAPUS PERMANEN", use_container_width=True):
+                items = pd.read_sql("SELECT id FROM inventory ORDER BY tanggal DESC", conn); conn.close()
+                target_id = st.selectbox("ID Hapus:", items['id'])
+                if st.button("HAPUS PERMANEN"):
                     conn = init_connection(); cur = conn.cursor()
                     cur.execute("DELETE FROM inventory WHERE id = %s", (int(target_id),))
                     conn.commit(); conn.close()
                     st.rerun()
             except: pass
 
-        if st.button("LOGOUT", use_container_width=True):
+        if st.button("LOGOUT"):
             st.session_state["logged_in"] = False
             st.rerun()
 
@@ -149,7 +152,6 @@ else:
     
     try:
         conn = init_connection()
-        # Kita ambil ID juga agar user tahu mana yang mau diedit
         df = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah, tanggal FROM inventory ORDER BY tanggal DESC", conn); conn.close()
 
         if not df.empty:
@@ -157,7 +159,8 @@ else:
             df['SKU'] = split_results.str[0]
             df['Item Name'] = split_results.str[1]
             df['Unit'] = split_results.str[2]
-            df['PIC'] = split_results.str[3]
+            df['Input By'] = split_results.str[3] # Creator
+            df['Edited By'] = split_results.str[4] # Editor terakhir
             
             df['tanggal'] = pd.to_datetime(df['tanggal'])
             df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
@@ -167,33 +170,28 @@ else:
 
             # Metrics
             c1, c2, c3 = st.columns(3)
-            with c1: st.markdown(f"<div class='metric-card'><small>Total Record</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+            with c1: st.markdown(f"<div class='metric-card'><small>Records</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
             with c2: st.markdown(f"<div class='metric-card'><small>Total Unit</small><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
             with c3: st.markdown(f"<div class='metric-card'><small>Jenis Barang</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
 
             st.write("---")
 
-            # Tampilan Tabel
-            col_a, col_b = st.columns([2.5, 1.2])
-            with col_a:
-                st.markdown("### 📜 Log Transaksi Terakhir")
-                # Kita tampilkan ID agar user mudah memilih saat mengedit
-                st.dataframe(df[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'PIC', 'jenis_mutasi', 'jumlah']], 
-                             use_container_width=True, hide_index=True,
-                             column_config={
-                                 "id": st.column_config.NumberColumn("ID", width="small"),
-                                 "tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm"),
-                                 "Item Name": st.column_config.TextColumn("Nama Barang", width="medium"),
-                                 "Unit": "Satuan",
-                                 "PIC": "User",
-                                 "jenis_mutasi": "Aksi",
-                                 "jumlah": "Qty"
-                             })
+            # Tabel Log dengan Kolom Audit
+            st.markdown("### 📜 Log Transaksi & Audit")
+            st.dataframe(df[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']], 
+                         use_container_width=True, hide_index=True,
+                         column_config={
+                             "id": "ID",
+                             "tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm"),
+                             "Input By": st.column_config.TextColumn("Dibuat Oleh", help="User yang pertama menginput"),
+                             "Edited By": st.column_config.TextColumn("Diedit Oleh", help="User yang terakhir merubah"),
+                             "jenis_mutasi": "Aksi",
+                             "jumlah": "Qty"
+                         })
             
-            with col_b:
-                st.markdown("### 📊 Ringkasan Stok")
-                st.dataframe(stok_df, use_container_width=True, hide_index=True,
-                             column_config={"Sisa Stok": st.column_config.NumberColumn(format="%d 📦")})
+            st.markdown("### 📊 Ringkasan Stok")
+            st.dataframe(stok_df, use_container_width=True, hide_index=True)
+            
         else:
-            st.info("Belum ada data.")
+            st.info("Data kosong.")
     except Exception as e: st.error(f"Error: {e}")
