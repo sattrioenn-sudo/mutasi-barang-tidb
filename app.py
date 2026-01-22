@@ -4,10 +4,10 @@ import pandas as pd
 from datetime import datetime
 import pytz
 
-# 1. Konfigurasi Halaman & Tema Dasar
+# 1. Konfigurasi Halaman
 st.set_page_config(page_title="INV-PRIME PRO", page_icon="🚀", layout="wide")
 
-# 2. CSS UI Design Pro
+# 2. CSS UI Design
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap');
@@ -17,10 +17,7 @@ st.markdown("""
         background: rgba(30, 41, 59, 0.5);
         border: 1px solid rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
-        padding: 20px;
-        border-radius: 16px;
-        text-align: center;
-        margin-bottom: 10px;
+        padding: 20px; border-radius: 16px; text-align: center; margin-bottom: 10px;
     }
     [data-testid="stSidebar"] { background-color: #0f172a; border-right: 1px solid rgba(255, 255, 255, 0.05); }
     .stButton>button {
@@ -42,144 +39,116 @@ def init_connection():
         use_pure=True
     )
 
-# 4. Inisialisasi Session State
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
-if "current_user" not in st.session_state:
-    st.session_state["current_user"] = ""
 
-# --- LOGIKA TAMPILAN ---
+# --- UI LOGIN ---
 if not st.session_state["logged_in"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1, 1])
     with col2:
-        st.markdown("""
-            <div style='background: rgba(30, 41, 59, 0.7); padding: 40px; border-radius: 24px; border: 1px solid rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px);'>
-                <h1 style='text-align:center; color:white; margin-bottom: 0;'>🚀</h1>
-                <h2 style='text-align:center; color:white; margin-top: 0;'>INV-PRIME</h2>
-                <p style='text-align:center; color:#94a3b8;'>Enterprise Inventory System</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align:center; color:white;'>🔐 INV-PRIME LOGIN</h2>", unsafe_allow_html=True)
         with st.form("login_form"):
             u_input = st.text_input("Username")
             p_input = st.text_input("Password", type="password")
-            if st.form_submit_button("LOGIN TO DASHBOARD", use_container_width=True):
-                if "auth_users" in st.secrets:
-                    users_list = st.secrets["auth_users"]
-                    if u_input in users_list and str(p_input) == str(users_list[u_input]):
-                        st.session_state["logged_in"] = True
-                        st.session_state["current_user"] = u_input
-                        st.rerun()
-                    else: st.error("Invalid credentials")
-                else: st.error("Secrets not configured!")
+            if st.form_submit_button("LOGIN", use_container_width=True):
+                users = st.secrets["auth_users"]
+                if u_input in users and str(p_input) == str(users[u_input]):
+                    st.session_state["logged_in"] = True
+                    st.session_state["current_user"] = u_input
+                    st.rerun()
+                else: st.error("Akses Ditolak")
+
 else:
-    # 1. SIDEBAR
+    # --- SIDEBAR (INPUT & DELETE) ---
     with st.sidebar:
-        st.markdown(f"""
-            <div style='padding: 10px; background: rgba(56, 189, 248, 0.1); border-radius: 12px; border: 1px solid rgba(56, 189, 248, 0.2);'>
-                <p style='margin:0; color:#94a3b8; font-size:12px;'>User Active</p>
-                <p style='margin:0; color:#38bdf8; font-weight:700;'>{st.session_state['current_user'].upper()}</p>
-            </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         st.markdown("---")
         
-        with st.expander("➕ Create Transaction", expanded=True):
-            with st.form("input", clear_on_submit=True):
-                sku = st.text_input("SKU", placeholder="BRG-001")
-                n = st.text_input("Item Name")
-                satuan = st.selectbox("Unit", ["Pcs", "Box", "Kg", "Liter", "Set"])
-                j = st.selectbox("Action", ["Masuk", "Keluar"])
-                q = st.number_input("Qty", min_value=1, step=1)
-                if st.form_submit_button("SAVE TRANSACTION", use_container_width=True):
+        with st.expander("➕ Tambah Transaksi", expanded=True):
+            with st.form("input_form", clear_on_submit=True):
+                sku = st.text_input("SKU")
+                n = st.text_input("Nama Barang")
+                sat = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg"])
+                j = st.selectbox("Aksi", ["Masuk", "Keluar"])
+                q = st.number_input("Qty", min_value=1)
+                
+                if st.form_submit_button("SIMPAN DATA", use_container_width=True):
                     if n:
-                        tz_jkt = pytz.timezone('Asia/Jakarta')
-                        waktu_sekarang = datetime.now(tz_jkt).strftime('%Y-%m-%d %H:%M:%S')
-                        user_aktif = st.session_state['current_user']
+                        tz = pytz.timezone('Asia/Jakarta')
+                        now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                        user = st.session_state['current_user']
+                        # SIMPAN DENGAN PEMISAH '|'
+                        full_name = f"[{sku}] {n} ({sat}) | {user}" if sku else f"{n} ({sat}) | {user}"
                         
-                        # Simpan dengan separator '|' untuk dipisah nanti
-                        nama_gabung = f"[{sku}] {n} ({satuan}) | {user_aktif}" if sku else f"{n} ({satuan}) | {user_aktif}"
-                        
-                        try:
-                            conn = init_connection(); cur = conn.cursor()
-                            query = "INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s, %s, %s, %s)"
-                            cur.execute(query, (nama_gabung, j, q, waktu_sekarang))
-                            conn.commit(); conn.close()
-                            st.rerun()
-                        except Exception as e: st.error(f"Error: {e}")
-
-        with st.expander("🗑️ Danger Zone"):
-            try:
-                conn = init_connection()
-                items_df = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn); conn.close()
-                if not items_df.empty:
-                    target = st.selectbox("Select Entry to Delete:", items_df['nama_barang'])
-                    conf = st.checkbox("Confirm delete")
-                    if st.button("DELETE ENTRY", use_container_width=True, disabled=not conf):
                         conn = init_connection(); cur = conn.cursor()
-                        cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
+                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_name, j, q, now))
                         conn.commit(); conn.close()
                         st.rerun()
-            except: st.write("No data")
+
+        with st.expander("🗑️ Hapus Data"):
+            try:
+                conn = init_connection()
+                items = pd.read_sql("SELECT DISTINCT nama_barang FROM inventory", conn); conn.close()
+                target = st.selectbox("Pilih Data:", items['nama_barang'])
+                if st.button("HAPUS PERMANEN", use_container_width=True):
+                    conn = init_connection(); cur = conn.cursor()
+                    cur.execute("DELETE FROM inventory WHERE nama_barang = %s", (target,))
+                    conn.commit(); conn.close()
+                    st.rerun()
+            except: pass
 
         if st.button("LOGOUT", use_container_width=True):
             st.session_state["logged_in"] = False
             st.rerun()
 
-    # 2. HALAMAN UTAMA
+    # --- MAIN DASHBOARD ---
     st.markdown("<h1 style='color: white;'>Inventory Overview</h1>", unsafe_allow_html=True)
     
     try:
         conn = init_connection()
-        df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn)
-        conn.close()
+        df = pd.read_sql("SELECT * FROM inventory ORDER BY tanggal DESC", conn); conn.close()
 
         if not df.empty:
-            # --- VIRTUAL COLUMN SPLITTING ---
-            # Memecah kolom nama_barang menjadi 'Product' dan 'User'
-            temp_split = df['nama_barang'].str.split(' | ', expand=True)
-            df['Product_Clean'] = temp_split[0]
-            # Jika tidak ada separator '|', user diisi 'Legacy/System'
-            df['Input_By'] = temp_split[1].fillna('System') 
+            # --- LOGIKA PEMISAHAN KOLOM VIRTUAL ---
+            # Kita pecah kolom 'nama_barang' menjadi 2 kolom baru di memori
+            split_cols = df['nama_barang'].str.split(' | ', expand=True)
+            df['Item Name'] = split_cols[0]
+            df['User'] = split_cols[1].fillna("System") # Handle data lama jika ada
             
             df['tanggal'] = pd.to_datetime(df['tanggal'])
             df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
             
-            # Hitung stok berdasarkan nama barang yang sudah bersih (Product_Clean)
-            stok_df = df.groupby('Product_Clean')['adj'].sum().reset_index()
-            stok_df.columns = ['Item', 'Stock']
+            # Hitung Stok berdasarkan Nama Item saja (agar tidak duplikat per user)
+            stok_df = df.groupby('Item Name')['adj'].sum().reset_index()
+            stok_df.columns = ['Produk', 'Sisa Stok']
 
-            # METRICS
-            m1, m2, m3 = st.columns(3)
-            with m1: st.markdown(f"<div class='metric-card'><p style='color:#94a3b8;'>Total Entries</p><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
-            with m2: st.markdown(f"<div class='metric-card'><p style='color:#94a3b8;'>Total Volume</p><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
-            with m3:
-                top_item = stok_df.iloc[stok_df['Stock'].idxmax()]['Item'] if not stok_df.empty else "-"
-                st.markdown(f"<div class='metric-card'><p style='color:#94a3b8;'>Highest Stock</p><h2 style='font-size:16px;'>{top_item}</h2></div>", unsafe_allow_html=True)
+            # Metrics
+            c1, c2, c3 = st.columns(3)
+            with c1: st.markdown(f"<div class='metric-card'><small>Total Record</small><h2>{len(df)}</h2></div>", unsafe_allow_html=True)
+            with c2: st.markdown(f"<div class='metric-card'><small>Total Unit</small><h2>{int(df['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
+            with c3: st.markdown(f"<div class='metric-card'><small>Item Unik</small><h2>{len(stok_df)}</h2></div>", unsafe_allow_html=True)
 
             st.write("---")
 
-            col_log, col_stock = st.columns([1.8, 1.2])
-            with col_log:
-                st.markdown("### 📜 Activity Log")
-                st.dataframe(
-                    df[['tanggal', 'Product_Clean', 'Input_By', 'jenis_mutasi', 'jumlah']], 
-                    use_container_width=True, hide_index=True,
-                    column_config={
-                        "tanggal": st.column_config.DatetimeColumn("Time", format="D MMM, HH:mm"),
-                        "Product_Clean": st.column_config.TextColumn("Product Detail", width="medium"),
-                        "Input_By": st.column_config.TextColumn("User", width="small"),
-                        "jenis_mutasi": "Status",
-                        "jumlah": "Qty"
-                    })
+            # Tabel Log dengan Kolom Terpisah
+            col_a, col_b = st.columns([1.8, 1.2])
+            with col_a:
+                st.markdown("### 📜 Log Transaksi")
+                st.dataframe(df[['tanggal', 'Item Name', 'User', 'jenis_mutasi', 'jumlah']], 
+                             use_container_width=True, hide_index=True,
+                             column_config={
+                                 "tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm"),
+                                 "Item Name": "Nama Item",
+                                 "User": st.column_config.TextColumn("PIC / User", help="Siapa yang menginput data"),
+                                 "jenis_mutasi": "Aksi",
+                                 "jumlah": "Qty"
+                             })
             
-            with col_stock:
+            with col_b:
                 st.markdown("### 📊 Saldo Stok")
                 st.dataframe(stok_df, use_container_width=True, hide_index=True,
-                    column_config={
-                        "Item": "Product",
-                        "Stock": st.column_config.NumberColumn("Current Stock", format="%d 📦")
-                    })
+                             column_config={"Sisa Stok": st.column_config.NumberColumn(format="%d 📦")})
         else:
-            st.info("No transaction data found.")
-    except Exception as e:
-        st.error(f"Error: {e}")
+            st.info("Belum ada data transaksi.")
+    except Exception as e: st.error(f"Koneksi Bermasalah: {e}")
