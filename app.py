@@ -22,6 +22,9 @@ st.markdown("""
         background: white; color: black; padding: 20px; border-radius: 5px; 
         border: 2px dashed #333; text-align: center; font-family: monospace;
     }
+    .opname-card {
+        background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -78,16 +81,14 @@ else:
     with st.sidebar:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         
-        # --- FITUR BARU: FILTER PERIODE ---
         st.markdown("---")
-        st.markdown("### 🔍 Filter Periode")
+        st.markdown("### 🔍 Filter Periode Opname")
         today = datetime.now()
-        start_date = st.date_input("Tanggal Mulai", today - timedelta(days=30))
+        start_date = st.date_input("Tanggal Mulai", today - timedelta(days=7))
         end_date = st.date_input("Tanggal Akhir", today)
         
         st.markdown("---")
         
-        # 1. TAMBAH DATA
         with st.expander("➕ Tambah Transaksi"):
             with st.form("input_form", clear_on_submit=True):
                 sku_f = st.text_input("SKU")
@@ -105,7 +106,6 @@ else:
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full, j_f, q_f, now))
                         conn.commit(); conn.close(); st.rerun()
 
-        # 2. EDIT DATA
         with st.expander("📝 Edit Transaksi"):
             if not df_raw.empty:
                 edit_id = st.selectbox("ID Edit", df_raw['id'].sort_values(ascending=False))
@@ -124,7 +124,6 @@ else:
                         cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, tanggal=%s WHERE id=%s", (full_upd, e_qty, now, int(edit_id)))
                         conn.commit(); conn.close(); st.rerun()
 
-        # 3. HAPUS DATA
         with st.expander("🗑️ Hapus Transaksi"):
             if not df_raw.empty:
                 del_id = st.selectbox("ID Hapus", df_raw['id'].sort_values(ascending=False))
@@ -138,44 +137,77 @@ else:
             st.rerun()
 
     # --- DASHBOARD UTAMA ---
-    st.markdown("<h1 style='color: white;'>Inventory Overview</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='color: white;'>Inventory Overview & Opname</h1>", unsafe_allow_html=True)
     
     if not df_raw.empty:
-        # Pre-processing Data
+        # Pre-processing Total Data
         parsed = df_raw['nama_barang'].apply(parse_inventory_name)
         df_raw['SKU'] = parsed.str[0]; df_raw['Item Name'] = parsed.str[1]
         df_raw['Unit'] = parsed.str[2]; df_raw['Keterangan'] = parsed.str[5]
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
-        
-        # --- LOGIKA FILTER PERIODE ---
+        df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
+
+        # --- LOGIKA STOCK OPNAME (MINGGUAN/BULANAN) ---
+        # 1. Data Sebelum Periode (Untuk Stok Awal)
+        df_awal = df_raw[df_raw['tanggal'].dt.date < start_date]
+        stok_awal = df_awal.groupby(['SKU'])['adj'].sum().reset_index(name='Stok Awal')
+
+        # 2. Data Selama Periode (Mutasi)
         mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
-        df_filtered = df_raw.loc[mask].copy()
+        df_periode = df_raw.loc[mask].copy()
+        
+        # Hitung Total Masuk & Keluar per SKU
+        mutasi_periode = df_periode.groupby(['SKU', 'jenis_mutasi'])['jumlah'].sum().unstack(fill_value=0).reset_index()
+        if 'Masuk' not in mutasi_periode: mutasi_periode['Masuk'] = 0
+        if 'Keluar' not in mutasi_periode: mutasi_periode['Keluar'] = 0
+        mutasi_periode = mutasi_periode[['SKU', 'Masuk', 'Keluar']]
 
-        if not df_filtered.empty:
-            df_filtered['adj'] = df_filtered.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
-            df_filtered['Status'] = df_filtered['jenis_mutasi'].apply(lambda x: "🟢 MASUK" if x == 'Masuk' else "🔴 KELUAR")
+        # 3. Gabungkan Semua Jadi Laporan Opname
+        # Ambil list SKU unik yang ada di sistem
+        all_sku = df_raw[['SKU', 'Item Name', 'Unit']].drop_duplicates('SKU')
+        opname_df = pd.merge(all_sku, stok_awal, on='SKU', how='left').fillna(0)
+        opname_df = pd.merge(opname_df, mutasi_periode, on='SKU', how='left').fillna(0)
+        opname_df['Stok Akhir'] = opname_df['Stok Awal'] + opname_df['Masuk'] - opname_df['Keluar']
 
-            # Section: Stok & Label
-            st.markdown(f"### 📊 Stok Periode: {start_date.strftime('%d/%m/%y')} - {end_date.strftime('%d/%m/%y')}")
-            stok_rekap = df_filtered.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
-            stok_rekap.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
-            
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                st.dataframe(stok_rekap, use_container_width=True, hide_index=True)
-            with c2:
-                t_sku = st.selectbox("Cetak Label SKU", ["-- Pilih --"] + list(stok_rekap['SKU']))
-                if t_sku != "-- Pilih --":
-                    r_l = stok_rekap[stok_rekap['SKU'] == t_sku].iloc[0]
-                    st.markdown(f'<div class="label-box"><h2>{r_l["SKU"]}</h2><p><b>{r_l["Produk"]}</b></p><small>{r_l["Satuan"]} | STOK: {r_l["Sisa Stok"]}</small></div>', unsafe_allow_html=True)
+        # --- DISPLAY SECTION 1: STOCK OPNAME REPORT ---
+        st.markdown(f"### 📋 Laporan Stock Opname ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')})")
+        
+        # Tampilkan metrik ringkasan
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total SKU Aktif", len(opname_df))
+        m2.metric("Total Barang Masuk", int(opname_df['Masuk'].sum()))
+        m3.metric("Total Barang Keluar", int(opname_df['Keluar'].sum()))
 
-            # Section: Log
-            st.markdown("### 📜 Log Transaksi Periode Ini")
-            df_display = df_filtered.sort_values(by='tanggal', ascending=False)
-            st.dataframe(df_display[['id', 'Status', 'tanggal', 'SKU', 'Item Name', 'jumlah', 'Unit', 'Keterangan']], 
-                         use_container_width=True, hide_index=True,
-                         column_config={"tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm")})
-        else:
-            st.warning(f"Tidak ada data ditemukan pada periode {start_date} hingga {end_date}")
+        st.dataframe(
+            opname_df[['SKU', 'Item Name', 'Unit', 'Stok Awal', 'Masuk', 'Keluar', 'Stok Akhir']],
+            use_container_width=True, hide_index=True
+        )
+
+        st.markdown("---")
+
+        # --- DISPLAY SECTION 2: LABEL & LOG ---
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.markdown("### 🏷️ Cetak Label")
+            t_sku = st.selectbox("Pilih SKU", ["-- Pilih --"] + list(opname_df['SKU']))
+            if t_sku != "-- Pilih --":
+                r_l = opname_df[opname_df['SKU'] == t_sku].iloc[0]
+                st.markdown(f'''
+                    <div class="label-box">
+                        <h2>{r_l["SKU"]}</h2>
+                        <p><b>{r_l["Item Name"]}</b></p>
+                        <small>{r_l["Unit"]} | SALDO: {r_l["Stok Akhir"]}</small>
+                    </div>
+                ''', unsafe_allow_html=True)
+
+        with c2:
+            st.markdown("### 📜 Detail Mutasi Periode Ini")
+            df_display = df_periode.sort_values(by='tanggal', ascending=False)
+            df_display['Status'] = df_display['jenis_mutasi'].apply(lambda x: "🟢 MASUK" if x == 'Masuk' else "🔴 KELUAR")
+            st.dataframe(
+                df_display[['id', 'Status', 'tanggal', 'SKU', 'Item Name', 'jumlah', 'Keterangan']], 
+                use_container_width=True, hide_index=True,
+                column_config={"tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm")}
+            )
     else:
         st.info("Belum ada data di database.")
