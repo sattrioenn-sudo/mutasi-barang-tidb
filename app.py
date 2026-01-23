@@ -4,14 +4,12 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 
-# 1. Konfigurasi Halaman
+# 1. Konfigurasi Halaman & Tema
 st.set_page_config(page_title="INV-PRIME PRO", page_icon="🚀", layout="wide")
 
-# Inisialisasi User di Session (Tetap aman tanpa merubah DB)
 if "user_db" not in st.session_state:
     st.session_state["user_db"] = dict(st.secrets["auth_users"])
 
-# --- CSS UI ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap');
@@ -23,15 +21,16 @@ st.markdown("""
     }
     .metric-label { font-size: 0.8rem; color: #94a3b8; font-weight: 600; }
     .metric-value { font-size: 1.5rem; font-weight: 700; margin-top: 5px; }
+    .label-box {
+        background: white; color: black; padding: 15px; border-radius: 8px; 
+        border: 2px dashed #333; text-align: center; font-family: 'Courier New', monospace;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 # 2. Fungsi Database
 def init_connection():
-    return mysql.connector.connect(
-        **st.secrets["tidb"],
-        ssl_verify_cert=False, use_pure=True
-    )
+    return mysql.connector.connect(**st.secrets["tidb"], ssl_verify_cert=False, use_pure=True)
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -41,7 +40,7 @@ def parse_inventory_name(val):
     while len(parts) < 6: parts.append("-")
     return parts
 
-# --- AUTH LOGIC ---
+# --- LOGIN ---
 if not st.session_state["logged_in"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1.2, 1])
@@ -61,8 +60,7 @@ else:
         conn = init_connection()
         df_raw = pd.read_sql("SELECT * FROM inventory", conn)
         conn.close()
-    except:
-        df_raw = pd.DataFrame()
+    except: df_raw = pd.DataFrame()
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -70,9 +68,7 @@ else:
         st.markdown("---")
         start_date = st.date_input("📅 Mulai", datetime.now() - timedelta(days=365))
         end_date = st.date_input("📅 Akhir", datetime.now())
-        st.markdown("---")
         
-        # 1. MENU TRANSAKSI (Input, Edit, Hapus Barang)
         with st.expander("🛠️ Menu Transaksi"):
             mode = st.radio("Aksi:", ["Input", "Edit", "Hapus"])
             if mode == "Input":
@@ -85,52 +81,62 @@ else:
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full, jn, qt, now))
                         conn.commit(); conn.close(); st.rerun()
-            # ... (Logika Edit & Hapus barang tetap ada di sistem)
+            # (Fungsi Edit/Hapus Barang tetap aktif)
 
-        # 2. MENU SECURITY & USERS (Input & Hapus User)
         with st.expander("🔐 Security & Users"):
-            st.write("**Tambah User Baru**")
-            new_u = st.text_input("Username Baru", key="new_u")
-            new_p = st.text_input("Password Baru", type="password", key="new_p")
+            st.write("**Tambah User**")
+            nu, np = st.text_input("Username"), st.text_input("Password", type="password")
             if st.button("CREATE USER"):
-                if new_u and new_p:
-                    st.session_state["user_db"][new_u] = new_p
-                    st.success(f"User {new_u} berhasil dibuat!")
-                    st.rerun()
-                else: st.warning("Lengkapi data user!")
-
+                if nu and np: st.session_state["user_db"][nu] = np; st.success(f"{nu} Aktif!"); st.rerun()
+            
             st.markdown("---")
             st.write("**Hapus User**")
-            # Menghindari user menghapus dirinya sendiri yang sedang login
-            list_users = [u for u in st.session_state["user_db"].keys() if u != st.session_state["current_user"]]
-            user_to_del = st.selectbox("Pilih User untuk Dihapus:", ["-"] + list_users)
-            
-            if st.button("DELETE USER", type="secondary"):
-                if user_to_del != "-":
-                    del st.session_state["user_db"][user_to_del]
-                    st.success(f"User {user_to_del} dihapus!")
-                    st.rerun()
-                else:
-                    st.warning("Pilih user terlebih dahulu!")
+            list_u = [u for u in st.session_state["user_db"].keys() if u != st.session_state["current_user"]]
+            u_del = st.selectbox("Pilih User:", ["-"] + list_u)
+            if st.button("DELETE USER") and u_del != "-":
+                del st.session_state["user_db"][u_del]; st.success(f"{u_del} Dihapus!"); st.rerun()
 
         if st.button("🚪 Logout", use_container_width=True):
-            st.session_state["logged_in"] = False
-            st.rerun()
+            st.session_state["logged_in"] = False; st.rerun()
 
-    # --- DASHBOARD (Data Tetap Muncul) ---
-    st.markdown("<h2 style='color:white;'>📊 Dashboard Overview</h2>", unsafe_allow_html=True)
+    # --- DASHBOARD CONTENT (KEMBALIKAN TAMPILAN) ---
+    st.markdown("<h2 style='color:white;'>📊 Command Center</h2>", unsafe_allow_html=True)
+    
     if not df_raw.empty:
-        # Proses data seperti sebelumnya agar laporan muncul kembali
+        # Processing
         p = df_raw['nama_barang'].apply(parse_inventory_name)
         df_raw['SKU'], df_raw['Item'], df_raw['Unit'] = p.str[0], p.str[1], p.str[2]
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
+        stok_awal = df_raw[df_raw['tanggal'].dt.date < start_date].groupby('SKU')['adj'].sum().reset_index(name='Awal')
         mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
         df_p = df_raw.loc[mask].copy()
         
-        # (Lanjutkan dengan tampilan metrik, chart, dan tabel laporan...)
-        st.info(f"Menampilkan data dari {start_date} sampai {end_date}")
-        st.dataframe(df_p[['tanggal', 'SKU', 'Item', 'jenis_mutasi', 'jumlah']], use_container_width=True)
+        mut = df_p.groupby(['SKU', 'jenis_mutasi'])['jumlah'].sum().unstack(fill_value=0).reset_index()
+        for c in ['Masuk', 'Keluar']:
+            if c not in mut: mut[c] = 0
+
+        res = pd.merge(df_raw[['SKU', 'Item', 'Unit']].drop_duplicates('SKU'), stok_awal, on='SKU', how='left').fillna(0)
+        res = pd.merge(res, mut[['SKU', 'Masuk', 'Keluar']], on='SKU', how='left').fillna(0)
+        res['Saldo'] = res['Awal'] + res['Masuk'] - res['Keluar']
+
+        # Metrics & Small Chart
+        c1, c2, c3 = st.columns([1, 1, 2])
+        c1.markdown(f"<div class='metric-card'><div class='metric-label'>TOTAL MASUK</div><div class='metric-value' style='color:#38bdf8;'>{int(res['Masuk'].sum())}</div></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='metric-card'><div class='metric-label'>TOTAL KELUAR</div><div class='metric-value' style='color:#f87171;'>{int(res['Keluar'].sum())}</div></div>", unsafe_allow_html=True)
+        with c3:
+            top_5 = res.sort_values('Keluar', ascending=False).head(5)
+            if top_5['Keluar'].sum() > 0: st.bar_chart(top_5.set_index('Item')['Keluar'], height=150)
+            else: st.info("Tidak ada mutasi periode ini.")
+
+        # Main Table
+        st.markdown("### 📋 Laporan Stock Opname")
+        st.dataframe(res[['SKU', 'Item', 'Unit', 'Awal', 'Masuk', 'Keluar', 'Saldo']], use_container_width=True, hide_index=True)
+        
+        # Log Table
+        st.markdown("### 📜 Log Pergerakan")
+        df_p['St'] = df_p['jenis_mutasi'].apply(lambda x: "🟢" if x == 'Masuk' else "🔴")
+        st.dataframe(df_p[['St', 'tanggal', 'SKU', 'Item', 'jumlah']], use_container_width=True, hide_index=True)
     else:
-        st.warning("Database kosong atau koneksi terputus.")
+        st.info("Database kosong.")
