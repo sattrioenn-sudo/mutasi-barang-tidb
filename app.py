@@ -60,11 +60,9 @@ if not st.session_state["logged_in"]:
                 else: st.error("Akses Ditolak")
 
 else:
-    # --- FUNGSI PARSING DATA (SEKARANG 6 BAGIAN) ---
     def parse_inventory_name(val):
         parts = val.split('|')
         parts = [p.strip() for p in parts]
-        # Urutan: 0:SKU, 1:Nama, 2:Satuan, 3:Creator, 4:Editor, 5:Catatan
         while len(parts) < 6:
             parts.append("-")
         return parts
@@ -82,7 +80,7 @@ else:
                 sat_in = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"])
                 j_in = st.selectbox("Aksi", ["Masuk", "Keluar"])
                 q_in = st.number_input("Qty", min_value=1)
-                note_in = st.text_input("Keterangan (Contoh: Retur, Rusak, dll)")
+                note_in = st.text_input("Keterangan")
                 
                 if st.form_submit_button("SIMPAN DATA", use_container_width=True):
                     if nama_in:
@@ -91,8 +89,6 @@ else:
                         sku_f = sku_in if sku_in else "-"
                         user_now = st.session_state['current_user']
                         note_f = note_in if note_in else "-"
-                        
-                        # Gabungkan 6 bagian
                         full_entry = f"{sku_f} | {nama_in} | {sat_in} | {user_now} | {user_now} | {note_f}"
                         
                         conn = init_connection(); cur = conn.cursor()
@@ -124,16 +120,26 @@ else:
                             tz = pytz.timezone('Asia/Jakarta')
                             edit_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                             user_now = st.session_state['current_user']
-                            
-                            # Update: SKU | Nama | Satuan | Creator Asli | Editor Sekarang | Note Baru
                             new_entry = f"{e_sku} | {e_nama} | {e_sat} | {p_old[3]} | {user_now} | {e_note}"
-                            
                             conn = init_connection(); cur = conn.cursor()
                             query = "UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s, tanggal=%s WHERE id=%s"
                             cur.execute(query, (new_entry, e_aksi, e_qty, edit_time, int(selected_id)))
                             conn.commit(); conn.close()
                             st.rerun()
             except Exception as e: st.write(f"Error: {e}")
+
+        # 3. HAPUS DATA
+        with st.expander("🗑️ Hapus Data"):
+            try:
+                conn = init_connection()
+                items = pd.read_sql("SELECT id FROM inventory ORDER BY tanggal DESC", conn); conn.close()
+                target_id = st.selectbox("ID Hapus:", items['id'])
+                if st.button("HAPUS PERMANEN"):
+                    conn = init_connection(); cur = conn.cursor()
+                    cur.execute("DELETE FROM inventory WHERE id = %s", (int(target_id),))
+                    conn.commit(); conn.close()
+                    st.rerun()
+            except: pass
 
         if st.button("LOGOUT"):
             st.session_state["logged_in"] = False
@@ -144,25 +150,30 @@ else:
     
     try:
         conn = init_connection()
-        df = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah, tanggal FROM inventory ORDER BY tanggal DESC", conn); conn.close()
+        df_raw = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah, tanggal FROM inventory", conn); conn.close()
 
-        if not df.empty:
-            split_results = df['nama_barang'].apply(parse_inventory_name)
-            df['SKU'] = split_results.str[0]
-            df['Item Name'] = split_results.str[1]
-            df['Unit'] = split_results.str[2]
-            df['Input By'] = split_results.str[3]
-            df['Edited By'] = split_results.str[4]
-            df['Keterangan'] = split_results.str[5]
+        if not df_raw.empty:
+            # Parsing data
+            parsed = df_raw['nama_barang'].apply(parse_inventory_name)
+            df_raw['SKU'] = parsed.str[0]; df_raw['Item Name'] = parsed.str[1]; df_raw['Unit'] = parsed.str[2]
+            df_raw['Input By'] = parsed.str[3]; df_raw['Edited By'] = parsed.str[4]; df_raw['Keterangan'] = parsed.str[5]
+            df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
+            df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
+
+            # --- LOGIKA AGAR BARANG TIDAK HILANG SAAT LOG DIHAPUS ---
+            # 1. Master Barang: List unik SKU + Nama yang PERNAH ada
+            master_items = df_raw[['SKU', 'Item Name', 'Unit']].drop_duplicates()
             
-            df['tanggal'] = pd.to_datetime(df['tanggal'])
-            df['adj'] = df.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
+            # 2. Hitung Stok
+            stok_rekap = df_raw.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
             
-            # --- TABEL RINGKASAN STOK (ALERT) ---
-            st.markdown("### 📊 Ringkasan Stok (Alert < 5)")
-            stok_df = df.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
+            # 3. Merge: Pastikan semua Master Item muncul meskipun stoknya 0 (karena log dihapus)
+            stok_df = pd.merge(master_items, stok_rekap, on=['SKU', 'Item Name', 'Unit'], how='left')
+            stok_df['adj'] = stok_df['adj'].fillna(0)
             stok_df.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
 
+            # --- DISPLAY RINGKASAN STOK ---
+            st.markdown("### 📊 Ringkasan Stok (Alert < 5)")
             def color_low_stock(row):
                 if row['Sisa Stok'] < 5:
                     return ['background-color: #991b1b; color: white; font-weight: bold'] * len(row)
@@ -172,14 +183,14 @@ else:
 
             st.write("---")
 
-            # --- TABEL LOG DENGAN KOLOM KETERANGAN ---
+            # --- DISPLAY LOG TRANSAKSI ---
             st.markdown("### 📜 Log Transaksi & Audit")
-            st.dataframe(df[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Keterangan', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']], 
+            df_display = df_raw.sort_values(by='tanggal', ascending=False)
+            st.dataframe(df_display[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Keterangan', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']], 
                          use_container_width=True, hide_index=True,
                          column_config={
                              "id": "ID",
                              "tanggal": st.column_config.DatetimeColumn("Update", format="D MMM, HH:mm"),
-                             "Keterangan": st.column_config.TextColumn("Keterangan", width="medium")
                          })
             
         else:
