@@ -22,7 +22,7 @@ st.markdown("""
         background: white; color: black; padding: 20px; border-radius: 5px; 
         border: 2px dashed #333; text-align: center; font-family: monospace;
     }
-    .opname-card {
+    .metric-card {
         background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1);
     }
     </style>
@@ -82,7 +82,7 @@ else:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         
         st.markdown("---")
-        st.markdown("### 🔍 Filter Periode Opname")
+        st.markdown("### 🔍 Filter Laporan")
         today = datetime.now()
         start_date = st.date_input("Tanggal Mulai", today - timedelta(days=7))
         end_date = st.date_input("Tanggal Akhir", today)
@@ -136,48 +136,56 @@ else:
             st.session_state["logged_in"] = False
             st.rerun()
 
-    # --- DASHBOARD UTAMA ---
-    st.markdown("<h1 style='color: white;'>Inventory Overview & Opname</h1>", unsafe_allow_html=True)
-    
+    # --- DATA PROCESSING ---
     if not df_raw.empty:
-        # Pre-processing Total Data
         parsed = df_raw['nama_barang'].apply(parse_inventory_name)
         df_raw['SKU'] = parsed.str[0]; df_raw['Item Name'] = parsed.str[1]
         df_raw['Unit'] = parsed.str[2]; df_raw['Keterangan'] = parsed.str[5]
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
-        # --- LOGIKA STOCK OPNAME (MINGGUAN/BULANAN) ---
-        # 1. Data Sebelum Periode (Untuk Stok Awal)
+        # Kalkulasi Laporan Opname
         df_awal = df_raw[df_raw['tanggal'].dt.date < start_date]
         stok_awal = df_awal.groupby(['SKU'])['adj'].sum().reset_index(name='Stok Awal')
-
-        # 2. Data Selama Periode (Mutasi)
+        
         mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
         df_periode = df_raw.loc[mask].copy()
         
-        # Hitung Total Masuk & Keluar per SKU
         mutasi_periode = df_periode.groupby(['SKU', 'jenis_mutasi'])['jumlah'].sum().unstack(fill_value=0).reset_index()
         if 'Masuk' not in mutasi_periode: mutasi_periode['Masuk'] = 0
         if 'Keluar' not in mutasi_periode: mutasi_periode['Keluar'] = 0
         mutasi_periode = mutasi_periode[['SKU', 'Masuk', 'Keluar']]
 
-        # 3. Gabungkan Semua Jadi Laporan Opname
-        # Ambil list SKU unik yang ada di sistem
         all_sku = df_raw[['SKU', 'Item Name', 'Unit']].drop_duplicates('SKU')
         opname_df = pd.merge(all_sku, stok_awal, on='SKU', how='left').fillna(0)
         opname_df = pd.merge(opname_df, mutasi_periode, on='SKU', how='left').fillna(0)
         opname_df['Stok Akhir'] = opname_df['Stok Awal'] + opname_df['Masuk'] - opname_df['Keluar']
 
-        # --- DISPLAY SECTION 1: STOCK OPNAME REPORT ---
-        st.markdown(f"### 📋 Laporan Stock Opname ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')})")
-        
-        # Tampilkan metrik ringkasan
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total SKU Aktif", len(opname_df))
-        m2.metric("Total Barang Masuk", int(opname_df['Masuk'].sum()))
-        m3.metric("Total Barang Keluar", int(opname_df['Keluar'].sum()))
+        # --- DASHBOARD UTAMA ---
+        st.markdown("<h1 style='color: white;'>Inventory Command Center</h1>", unsafe_allow_html=True)
 
+        # --- FITUR BARU 1: ALERT STOK KRITIS ---
+        stok_kritis = opname_df[opname_df['Stok Akhir'] < 5]
+        if not stok_kritis.empty:
+            st.error(f"⚠️ **Peringatan Stok Kritis!** {len(stok_kritis)} item memiliki stok di bawah 5.")
+            with st.expander("Lihat Detail Barang Mau Habis"):
+                st.table(stok_kritis[['SKU', 'Item Name', 'Stok Akhir']])
+
+        # --- FITUR BARU 2: METRIK & GRAFIK ---
+        m1, m2, m3 = st.columns([1, 1, 2])
+        with m1:
+            st.metric("Total Masuk", int(opname_df['Masuk'].sum()))
+        with m2:
+            st.metric("Total Keluar", int(opname_df['Keluar'].sum()))
+        with m3:
+            # Grafik 5 Barang Paling Banyak Keluar
+            top_keluar = opname_df.sort_values(by='Keluar', ascending=False).head(5)
+            if top_keluar['Keluar'].sum() > 0:
+                st.markdown("**Top 5 Barang Keluar (Fast Moving)**")
+                st.bar_chart(top_keluar.set_index('Item Name')['Keluar'])
+
+        # --- SECTION: LAPORAN OPNAME ---
+        st.markdown(f"### 📋 Laporan Stock Opname ({start_date.strftime('%d %b')} - {end_date.strftime('%d %b %Y')})")
         st.dataframe(
             opname_df[['SKU', 'Item Name', 'Unit', 'Stok Awal', 'Masuk', 'Keluar', 'Stok Akhir']],
             use_container_width=True, hide_index=True
@@ -185,7 +193,7 @@ else:
 
         st.markdown("---")
 
-        # --- DISPLAY SECTION 2: LABEL & LOG ---
+        # --- SECTION: LABEL & LOG ---
         c1, c2 = st.columns([1, 2])
         with c1:
             st.markdown("### 🏷️ Cetak Label")
