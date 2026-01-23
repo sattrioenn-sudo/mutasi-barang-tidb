@@ -36,7 +36,7 @@ def init_connection():
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# --- UI LOGIN ---
+# --- LOGIN ---
 if not st.session_state["logged_in"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1, 1])
@@ -52,38 +52,27 @@ if not st.session_state["logged_in"]:
                     st.session_state["current_user"] = u_input
                     st.rerun()
                 else: st.error("Akses Ditolak")
-
 else:
+    # Fungsi Parser
     def parse_inventory_name(val):
-        parts = val.split('|')
-        parts = [p.strip() for p in parts]
-        while len(parts) < 6:
-            parts.append("-")
+        if not val or '|' not in val: return ["-", "-", "-", "-", "-", "-"]
+        parts = [p.strip() for p in val.split('|')]
+        while len(parts) < 6: parts.append("-")
         return parts
 
-    # --- PRE-LOAD DATA MASTER UNTUK AUTO-FILL ---
-    conn = init_connection()
-    all_raw = pd.read_sql("SELECT nama_barang FROM inventory", conn); conn.close()
-    
-    sku_map = {}
-    if not all_raw.empty:
-        for entry in all_raw['nama_barang']:
-            p = parse_inventory_name(entry)
-            if p[0] != "-" and p[0] not in sku_map:
-                sku_map[p[0]] = {"nama": p[1], "satuan": p[2]}
-    
-    sku_options = ["-- Ketik Baru --"] + sorted(list(sku_map.keys()))
+    # --- LOAD DATA ---
+    try:
+        conn = init_connection()
+        df_raw = pd.read_sql("SELECT * FROM inventory", conn)
+        conn.close()
+    except Exception as e:
+        st.error(f"Koneksi Database Gagal: {e}")
+        df_raw = pd.DataFrame()
 
-    # --- SIDEBAR ---
+    # --- SIDEBAR & INPUT ---
     with st.sidebar:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
-        st.markdown("---")
         
-        # 1. TAMBAH DATA (WITH AUTO-FILL)
         with st.expander("➕ Tambah Transaksi"):
-            selected_sku = st.selectbox("Pilih SKU Eksis", sku_options)
-            
             with st.form("input_form", clear_on_submit=True):
-                if selected_sku == "-- Ketik Baru --":
-                    sku_final = st.text_input("Input SKU Baru")
-                    nama_final = st
+                sku_in = st.text
