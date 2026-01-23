@@ -59,7 +59,7 @@ if not st.session_state["logged_in"]:
 
 else:
     def parse_inventory_name(val):
-        parts = val.split('|')
+        parts = str(val).split('|')
         parts = [p.strip() for p in parts]
         while len(parts) < 6:
             parts.append("-")
@@ -92,14 +92,17 @@ else:
                 note_f = st.text_input("Ket")
                 
                 if st.form_submit_button("SIMPAN"):
-                    tz = pytz.timezone('Asia/Jakarta')
-                    now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-                    u = st.session_state['current_user']
-                    full = f"{sku_f} | {nama_f} | {sat_f} | {u} | {u} | {note_f if note_f else '-'}"
-                    conn = init_connection(); cur = conn.cursor()
-                    cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full, j_f, q_f, now))
-                    conn.commit(); conn.close()
-                    st.rerun()
+                    if sku_f and nama_f:
+                        tz = pytz.timezone('Asia/Jakarta')
+                        now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                        u = st.session_state['current_user']
+                        full = f"{sku_f} | {nama_f} | {sat_f} | {u} | {u} | {note_f if note_f else '-'}"
+                        conn = init_connection(); cur = conn.cursor()
+                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full, j_f, q_f, now))
+                        conn.commit(); conn.close()
+                        st.rerun()
+                    else:
+                        st.warning("SKU dan Nama Barang wajib diisi!")
 
     # --- MAIN DASHBOARD ---
     st.markdown("<h1 style='color: white;'>Inventory Overview</h1>", unsafe_allow_html=True)
@@ -127,12 +130,12 @@ else:
         with c2:
             target_sku = st.selectbox("Pilih SKU untuk Label", ["-- Pilih --"] + list(stok_rekap['SKU']))
             if target_sku != "-- Pilih --":
-                row = stok_rekap[stok_rekap['SKU'] == target_sku].iloc[0]
+                row_sel = stok_rekap[stok_rekap['SKU'] == target_sku].iloc[0]
                 st.markdown(f"""
                 <div class="label-box">
-                    <h2 style="margin:0; border-bottom:2px solid black;">{row['SKU']}</h2>
-                    <p style="margin:10px 0; font-weight:bold; font-size:18px;">{row['Produk']}</p>
-                    <small>SATUAN: {row['Satuan']} | STOCK: {row['Sisa Stok']}</small><br>
+                    <h2 style="margin:0; border-bottom:2px solid black;">{row_sel['SKU']}</h2>
+                    <p style="margin:10px 0; font-weight:bold; font-size:18px;">{row_sel['Produk']}</p>
+                    <small>SATUAN: {row_sel['Satuan']} | STOCK: {row_sel['Sisa Stok']}</small><br>
                     <div style="margin-top:10px; font-size:9px; color:gray;">INV-PRIME SYSTEM</div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -152,4 +155,4 @@ else:
             column_config={"tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm")}
         )
     else:
-        st.info("Data
+        st.info("Data masih kosong. Silakan input transaksi pertama di sidebar.")
