@@ -36,7 +36,7 @@ def init_connection():
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# --- LOGIN ---
+# --- UI LOGIN ---
 if not st.session_state["logged_in"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1, 1])
@@ -52,27 +52,152 @@ if not st.session_state["logged_in"]:
                     st.session_state["current_user"] = u_input
                     st.rerun()
                 else: st.error("Akses Ditolak")
+
 else:
-    # Fungsi Parser
     def parse_inventory_name(val):
-        if not val or '|' not in val: return ["-", "-", "-", "-", "-", "-"]
-        parts = [p.strip() for p in val.split('|')]
-        while len(parts) < 6: parts.append("-")
+        parts = val.split('|')
+        parts = [p.strip() for p in parts]
+        while len(parts) < 6:
+            parts.append("-")
         return parts
 
-    # --- LOAD DATA ---
-    try:
-        conn = init_connection()
-        df_raw = pd.read_sql("SELECT * FROM inventory", conn)
-        conn.close()
-    except Exception as e:
-        st.error(f"Koneksi Database Gagal: {e}")
-        df_raw = pd.DataFrame()
+    # --- PRE-LOAD DATA MASTER UNTUK AUTO-FILL ---
+    conn = init_connection()
+    all_raw = pd.read_sql("SELECT nama_barang FROM inventory", conn); conn.close()
+    
+    sku_map = {}
+    if not all_raw.empty:
+        for entry in all_raw['nama_barang']:
+            p = parse_inventory_name(entry)
+            if p[0] != "-" and p[0] not in sku_map:
+                sku_map[p[0]] = {"nama": p[1], "satuan": p[2]}
+    
+    sku_options = ["-- Ketik Baru --"] + sorted(list(sku_map.keys()))
 
-    # --- SIDEBAR & INPUT ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
+        st.markdown("---")
         
+        # 1. TAMBAH DATA (WITH AUTO-FILL)
         with st.expander("➕ Tambah Transaksi"):
+            selected_sku = st.selectbox("Pilih SKU Eksis", sku_options)
+            
             with st.form("input_form", clear_on_submit=True):
-                sku_in = st.text
+                if selected_sku == "-- Ketik Baru --":
+                    sku_final = st.text_input("Input SKU Baru")
+                    nama_final = st.text_input("Nama Barang")
+                    sat_val = "Pcs"
+                else:
+                    sku_final = selected_sku
+                    st.info(f"SKU: {sku_final}")
+                    nama_final = st.text_input("Nama Barang", value=sku_map[selected_sku]["nama"])
+                    sat_val = sku_map[selected_sku]["satuan"]
+                
+                sat_opts = ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"]
+                sat_final = st.selectbox("Satuan", sat_opts, 
+                                        index=sat_opts.index(sat_val) if sat_val in sat_opts else 0)
+                
+                j_in = st.selectbox("Aksi", ["Masuk", "Keluar"])
+                q_in = st.number_input("Qty", min_value=1)
+                note_in = st.text_input("Keterangan")
+                
+                if st.form_submit_button("SIMPAN DATA", use_container_width=True):
+                    if nama_final:
+                        tz = pytz.timezone('Asia/Jakarta')
+                        now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                        user_now = st.session_state['current_user']
+                        full_entry = f"{sku_final if sku_final else '-'} | {nama_final} | {sat_final} | {user_now} | {user_now} | {note_in if note_in else '-'}"
+                        
+                        conn = init_connection(); cur = conn.cursor()
+                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_entry, j_in, q_in, now))
+                        conn.commit(); conn.close()
+                        st.rerun()
+
+        # 2. EDIT DATA
+        with st.expander("📝 Edit Transaksi"):
+            try:
+                conn = init_connection()
+                raw_edit = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah FROM inventory ORDER BY tanggal DESC", conn); conn.close()
+                if not raw_edit.empty:
+                    selected_id = st.selectbox("Pilih ID Data:", raw_edit['id'])
+                    row_edit = raw_edit[raw_edit['id'] == selected_id].iloc[0]
+                    p_old = parse_inventory_name(row_edit['nama_barang'])
+                    
+                    with st.form("edit_form"):
+                        e_sku = st.text_input("SKU", value=p_old[0])
+                        e_nama = st.text_input("Nama Barang", value=p_old[1])
+                        e_sat = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"], 
+                                           index=["Pcs", "Box", "Set", "Kg", "Liter", "Meter"].index(p_old[2]) if p_old[2] in ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"] else 0)
+                        e_aksi = st.selectbox("Aksi", ["Masuk", "Keluar"], index=0 if row_edit['jenis_mutasi'] == "Masuk" else 1)
+                        e_qty = st.number_input("Qty", min_value=1, value=int(row_edit['jumlah']))
+                        e_note = st.text_input("Keterangan", value=p_old[5])
+                        
+                        if st.form_submit_button("UPDATE DATA", use_container_width=True):
+                            tz = pytz.timezone('Asia/Jakarta'); edit_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                            new_entry = f"{e_sku} | {e_nama} | {e_sat} | {p_old[3]} | {st.session_state['current_user']} | {e_note}"
+                            conn = init_connection(); cur = conn.cursor()
+                            cur.execute("UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s, tanggal=%s WHERE id=%s", (new_entry, e_aksi, e_qty, edit_time, int(selected_id)))
+                            conn.commit(); conn.close()
+                            st.rerun()
+            except Exception as e: st.write(f"Error: {e}")
+
+        # 3. HAPUS DATA
+        with st.expander("🗑️ Hapus Data"):
+            try:
+                conn = init_connection()
+                items = pd.read_sql("SELECT id FROM inventory ORDER BY tanggal DESC", conn); conn.close()
+                target_id = st.selectbox("ID Hapus:", items['id'])
+                if st.button("HAPUS PERMANEN"):
+                    conn = init_connection(); cur = conn.cursor()
+                    cur.execute("DELETE FROM inventory WHERE id = %s", (int(target_id),))
+                    conn.commit(); conn.close()
+                    st.rerun()
+            except: pass
+
+        if st.button("LOGOUT"):
+            st.session_state["logged_in"] = False
+            st.rerun()
+
+    # --- MAIN DASHBOARD ---
+    st.markdown("<h1 style='color: white;'>Inventory Overview</h1>", unsafe_allow_html=True)
+    
+    try:
+        conn = init_connection()
+        df_raw = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah, tanggal FROM inventory", conn); conn.close()
+
+        if not df_raw.empty:
+            parsed = df_raw['nama_barang'].apply(parse_inventory_name)
+            df_raw['SKU'] = parsed.str[0]; df_raw['Item Name'] = parsed.str[1]; df_raw['Unit'] = parsed.str[2]
+            df_raw['Input By'] = parsed.str[3]; df_raw['Edited By'] = parsed.str[4]; df_raw['Keterangan'] = parsed.str[5]
+            df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
+            df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
+
+            # --- RINGKASAN STOK (MASTER ITEM PERSISTENCE) ---
+            master_items = df_raw[['SKU', 'Item Name', 'Unit']].drop_duplicates()
+            stok_rekap = df_raw.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
+            stok_df = pd.merge(master_items, stok_rekap, on=['SKU', 'Item Name', 'Unit'], how='left').fillna(0)
+            stok_df.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
+
+            st.markdown("### 📊 Ringkasan Stok (Alert < 5)")
+            st.dataframe(stok_df.style.apply(lambda r: ['background-color: #991b1b; color: white' if r['Sisa Stok'] < 5 else ''] * len(r), axis=1), use_container_width=True, hide_index=True)
+
+            st.write("---")
+            
+            # --- LOG TRANSAKSI DENGAN WARNA MUTASI ---
+            st.markdown("### 📜 Log Transaksi & Audit")
+            
+            def color_rows(row):
+                color = '#4ade80' if row['jenis_mutasi'] == 'Masuk' else '#f87171'
+                return [f'color: {color}; font-weight: 500'] * len(row)
+
+            df_display = df_raw.sort_values(by='tanggal', ascending=False)
+            st.dataframe(
+                df_display[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Keterangan', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']]
+                .style.apply(color_rows, axis=1), 
+                use_container_width=True, hide_index=True,
+                column_config={"tanggal": st.column_config.DatetimeColumn("Update", format="D MMM, HH:mm")}
+            )
+        else:
+            st.info("Data kosong.")
+    except Exception as e: st.error(f"Error: {e}")
