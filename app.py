@@ -4,9 +4,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 import pytz
 
-# 1. Konfigurasi Halaman & Tema
+# 1. Konfigurasi Halaman & Tema Premium
 st.set_page_config(page_title="INV-PRIME PRO", page_icon="🚀", layout="wide")
 
+# Inisialisasi User di Session
 if "user_db" not in st.session_state:
     st.session_state["user_db"] = dict(st.secrets["auth_users"])
 
@@ -21,10 +22,6 @@ st.markdown("""
     }
     .metric-label { font-size: 0.8rem; color: #94a3b8; font-weight: 600; }
     .metric-value { font-size: 1.5rem; font-weight: 700; margin-top: 5px; }
-    .label-box {
-        background: white; color: black; padding: 15px; border-radius: 8px; 
-        border: 2px dashed #333; text-align: center; font-family: 'Courier New', monospace;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -40,7 +37,7 @@ def parse_inventory_name(val):
     while len(parts) < 6: parts.append("-")
     return parts
 
-# --- LOGIN ---
+# --- AUTH ---
 if not st.session_state["logged_in"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1.2, 1])
@@ -69,23 +66,46 @@ else:
         start_date = st.date_input("📅 Mulai", datetime.now() - timedelta(days=365))
         end_date = st.date_input("📅 Akhir", datetime.now())
         
-        with st.expander("🛠️ Menu Transaksi"):
-            mode = st.radio("Aksi:", ["Input", "Edit", "Hapus"])
-            if mode == "Input":
+        # MENU TRANSAKSI LENGKAP
+        with st.expander("🛠️ Menu Transaksi Barang"):
+            mode = st.radio("Pilih Operasi:", ["Input Baru", "Edit Data", "Hapus Data"])
+            
+            if mode == "Input Baru":
                 with st.form("f_add", clear_on_submit=True):
                     sk, nm, qt = st.text_input("SKU"), st.text_input("Nama"), st.number_input("Qty", 1)
                     jn, stn = st.selectbox("Jenis", ["Masuk", "Keluar"]), st.selectbox("Sat", ["Pcs", "Box", "Kg"])
-                    if st.form_submit_button("Simpan"):
+                    if st.form_submit_button("SIMPAN INPUT", use_container_width=True):
                         tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         full = f"{sk} | {nm} | {stn} | {st.session_state['current_user']} | - | -"
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full, jn, qt, now))
                         conn.commit(); conn.close(); st.rerun()
-            # (Fungsi Edit/Hapus Barang tetap aktif)
+            
+            elif mode == "Edit Data" and not df_raw.empty:
+                edit_id = st.selectbox("Pilih ID Barang:", df_raw['id'].sort_values(ascending=False))
+                row_edit = df_raw[df_raw['id'] == edit_id].iloc[0]
+                p_old = parse_inventory_name(row_edit['nama_barang'])
+                with st.form("f_edit"):
+                    e_nm = st.text_input("Edit Nama", value=p_old[1])
+                    e_qt = st.number_input("Edit Qty", value=int(row_edit['jumlah']))
+                    if st.form_submit_button("UPDATE DATA", use_container_width=True):
+                        tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                        full_upd = f"{p_old[0]} | {e_nm} | {p_old[2]} | {p_old[3]} | {st.session_state['current_user']} | -"
+                        conn = init_connection(); cur = conn.cursor()
+                        cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, tanggal=%s WHERE id=%s", (full_upd, e_qt, now, int(edit_id)))
+                        conn.commit(); conn.close(); st.rerun()
 
+            elif mode == "Hapus Data" and not df_raw.empty:
+                del_id = st.selectbox("Pilih ID Hapus:", df_raw['id'].sort_values(ascending=False))
+                if st.button("❌ KONFIRMASI HAPUS", use_container_width=True):
+                    conn = init_connection(); cur = conn.cursor()
+                    cur.execute("DELETE FROM inventory WHERE id = %s", (int(del_id),))
+                    conn.commit(); conn.close(); st.rerun()
+
+        # MENU SECURITY
         with st.expander("🔐 Security & Users"):
             st.write("**Tambah User**")
-            nu, np = st.text_input("Username"), st.text_input("Password", type="password")
+            nu, np = st.text_input("User Baru"), st.text_input("Pass Baru", type="password")
             if st.button("CREATE USER"):
                 if nu and np: st.session_state["user_db"][nu] = np; st.success(f"{nu} Aktif!"); st.rerun()
             
@@ -99,44 +119,13 @@ else:
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state["logged_in"] = False; st.rerun()
 
-    # --- DASHBOARD CONTENT (KEMBALIKAN TAMPILAN) ---
+    # --- DASHBOARD OVERVIEW ---
     st.markdown("<h2 style='color:white;'>📊 Command Center</h2>", unsafe_allow_html=True)
     
     if not df_raw.empty:
-        # Processing
         p = df_raw['nama_barang'].apply(parse_inventory_name)
         df_raw['SKU'], df_raw['Item'], df_raw['Unit'] = p.str[0], p.str[1], p.str[2]
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
-        stok_awal = df_raw[df_raw['tanggal'].dt.date < start_date].groupby('SKU')['adj'].sum().reset_index(name='Awal')
-        mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
-        df_p = df_raw.loc[mask].copy()
-        
-        mut = df_p.groupby(['SKU', 'jenis_mutasi'])['jumlah'].sum().unstack(fill_value=0).reset_index()
-        for c in ['Masuk', 'Keluar']:
-            if c not in mut: mut[c] = 0
-
-        res = pd.merge(df_raw[['SKU', 'Item', 'Unit']].drop_duplicates('SKU'), stok_awal, on='SKU', how='left').fillna(0)
-        res = pd.merge(res, mut[['SKU', 'Masuk', 'Keluar']], on='SKU', how='left').fillna(0)
-        res['Saldo'] = res['Awal'] + res['Masuk'] - res['Keluar']
-
-        # Metrics & Small Chart
-        c1, c2, c3 = st.columns([1, 1, 2])
-        c1.markdown(f"<div class='metric-card'><div class='metric-label'>TOTAL MASUK</div><div class='metric-value' style='color:#38bdf8;'>{int(res['Masuk'].sum())}</div></div>", unsafe_allow_html=True)
-        c2.markdown(f"<div class='metric-card'><div class='metric-label'>TOTAL KELUAR</div><div class='metric-value' style='color:#f87171;'>{int(res['Keluar'].sum())}</div></div>", unsafe_allow_html=True)
-        with c3:
-            top_5 = res.sort_values('Keluar', ascending=False).head(5)
-            if top_5['Keluar'].sum() > 0: st.bar_chart(top_5.set_index('Item')['Keluar'], height=150)
-            else: st.info("Tidak ada mutasi periode ini.")
-
-        # Main Table
-        st.markdown("### 📋 Laporan Stock Opname")
-        st.dataframe(res[['SKU', 'Item', 'Unit', 'Awal', 'Masuk', 'Keluar', 'Saldo']], use_container_width=True, hide_index=True)
-        
-        # Log Table
-        st.markdown("### 📜 Log Pergerakan")
-        df_p['St'] = df_p['jenis_mutasi'].apply(lambda x: "🟢" if x == 'Masuk' else "🔴")
-        st.dataframe(df_p[['St', 'tanggal', 'SKU', 'Item', 'jumlah']], use_container_width=True, hide_index=True)
-    else:
-        st.info("Database kosong.")
+        stok_awal = df_raw[df_
