@@ -67,29 +67,56 @@ else:
             parts.append("-")
         return parts
 
+    # --- AMBIL DATA MASTER UNTUK AUTO-FILL ---
+    conn = init_connection()
+    all_data_raw = pd.read_sql("SELECT nama_barang FROM inventory", conn)
+    conn.close()
+
+    sku_map = {}
+    if not all_data_raw.empty:
+        for entry in all_data_raw['nama_barang']:
+            p = parse_inventory_name(entry)
+            if p[0] != "-" and p[0] not in sku_map:
+                sku_map[p[0]] = {"nama": p[1], "satuan": p[2]}
+    
+    sku_options = ["-- Ketik Baru --"] + sorted(list(sku_map.keys()))
+
     # --- SIDEBAR ---
     with st.sidebar:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
         st.markdown("---")
         
-        # 1. TAMBAH DATA
+        # 1. TAMBAH DATA (WITH AUTO-FILL)
         with st.expander("➕ Tambah Transaksi"):
+            selected_sku = st.selectbox("Pilih SKU Eksis", sku_options)
+            
             with st.form("input_form", clear_on_submit=True):
-                sku_in = st.text_input("SKU")
-                nama_in = st.text_input("Nama Barang")
-                sat_in = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"])
+                if selected_sku == "-- Ketik Baru --":
+                    sku_final = st.text_input("Input SKU Baru")
+                    nama_final = st.text_input("Nama Barang")
+                    sat_val = "Pcs"
+                else:
+                    sku_final = selected_sku
+                    st.info(f"SKU: {sku_final}")
+                    nama_final = st.text_input("Nama Barang", value=sku_map[selected_sku]["nama"])
+                    sat_val = sku_map[selected_sku]["satuan"]
+                
+                sat_options = ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"]
+                sat_final = st.selectbox("Satuan", sat_options, 
+                                        index=sat_options.index(sat_val) if sat_val in sat_options else 0)
+                
                 j_in = st.selectbox("Aksi", ["Masuk", "Keluar"])
                 q_in = st.number_input("Qty", min_value=1)
                 note_in = st.text_input("Keterangan")
                 
                 if st.form_submit_button("SIMPAN DATA", use_container_width=True):
-                    if nama_in:
+                    if nama_final:
                         tz = pytz.timezone('Asia/Jakarta')
                         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-                        sku_f = sku_in if sku_in else "-"
+                        sku_save = sku_final if sku_final else "-"
                         user_now = st.session_state['current_user']
-                        note_f = note_in if note_in else "-"
-                        full_entry = f"{sku_f} | {nama_in} | {sat_in} | {user_now} | {user_now} | {note_f}"
+                        note_save = note_in if note_in else "-"
+                        full_entry = f"{sku_save} | {nama_final} | {sat_final} | {user_now} | {user_now} | {note_save}"
                         
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_entry, j_in, q_in, now))
@@ -100,11 +127,11 @@ else:
         with st.expander("📝 Edit Transaksi"):
             try:
                 conn = init_connection()
-                raw_data = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah FROM inventory ORDER BY tanggal DESC", conn)
+                raw_edit = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah FROM inventory ORDER BY tanggal DESC", conn)
                 conn.close()
-                if not raw_data.empty:
-                    selected_id = st.selectbox("Pilih ID Data:", raw_data['id'])
-                    row_to_edit = raw_data[raw_data['id'] == selected_id].iloc[0]
+                if not raw_edit.empty:
+                    selected_id = st.selectbox("Pilih ID Data:", raw_edit['id'])
+                    row_to_edit = raw_edit[raw_edit['id'] == selected_id].iloc[0]
                     p_old = parse_inventory_name(row_to_edit['nama_barang'])
                     
                     with st.form("edit_form"):
@@ -153,26 +180,18 @@ else:
         df_raw = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah, tanggal FROM inventory", conn); conn.close()
 
         if not df_raw.empty:
-            # Parsing data
             parsed = df_raw['nama_barang'].apply(parse_inventory_name)
             df_raw['SKU'] = parsed.str[0]; df_raw['Item Name'] = parsed.str[1]; df_raw['Unit'] = parsed.str[2]
             df_raw['Input By'] = parsed.str[3]; df_raw['Edited By'] = parsed.str[4]; df_raw['Keterangan'] = parsed.str[5]
             df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
             df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
-            # --- LOGIKA AGAR BARANG TIDAK HILANG SAAT LOG DIHAPUS ---
-            # 1. Master Barang: List unik SKU + Nama yang PERNAH ada
             master_items = df_raw[['SKU', 'Item Name', 'Unit']].drop_duplicates()
-            
-            # 2. Hitung Stok
             stok_rekap = df_raw.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
-            
-            # 3. Merge: Pastikan semua Master Item muncul meskipun stoknya 0 (karena log dihapus)
             stok_df = pd.merge(master_items, stok_rekap, on=['SKU', 'Item Name', 'Unit'], how='left')
             stok_df['adj'] = stok_df['adj'].fillna(0)
             stok_df.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
 
-            # --- DISPLAY RINGKASAN STOK ---
             st.markdown("### 📊 Ringkasan Stok (Alert < 5)")
             def color_low_stock(row):
                 if row['Sisa Stok'] < 5:
@@ -182,8 +201,6 @@ else:
             st.dataframe(stok_df.style.apply(color_low_stock, axis=1), use_container_width=True, hide_index=True)
 
             st.write("---")
-
-            # --- DISPLAY LOG TRANSAKSI ---
             st.markdown("### 📜 Log Transaksi & Audit")
             df_display = df_raw.sort_values(by='tanggal', ascending=False)
             st.dataframe(df_display[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Keterangan', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']], 
@@ -192,7 +209,6 @@ else:
                              "id": "ID",
                              "tanggal": st.column_config.DatetimeColumn("Update", format="D MMM, HH:mm"),
                          })
-            
         else:
             st.info("Data kosong.")
     except Exception as e: st.error(f"Error: {e}")
