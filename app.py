@@ -31,7 +31,6 @@ st.markdown("""
         border: 2px dashed #333; text-align: center; font-family: 'Courier New', monospace;
     }
     
-    /* Memperkecil padding sidebar */
     [data-testid="stSidebar"] { background-color: #1e293b; }
     </style>
     """, unsafe_allow_html=True)
@@ -57,7 +56,7 @@ def parse_inventory_name(val):
     while len(parts) < 6: parts.append("-")
     return parts
 
-# --- AUTH ---
+# --- LOGIN ---
 if not st.session_state["logged_in"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1.2, 1])
@@ -73,12 +72,14 @@ if not st.session_state["logged_in"]:
                     st.rerun()
                 else: st.error("Akses Ditolak")
 else:
-    # --- LOAD & PROCESS DATA ---
+    # --- LOAD DATA ---
     try:
         conn = init_connection()
         df_raw = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah, tanggal FROM inventory", conn)
         conn.close()
-    except: df_raw = pd.DataFrame()
+    except Exception as e:
+        st.error(f"Error: {e}")
+        df_raw = pd.DataFrame()
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -88,38 +89,60 @@ else:
         end_date = st.date_input("📅 Akhir", datetime.now())
         st.markdown("---")
         
+        # TAB MENU AKSI
         with st.expander("🛠️ Menu Transaksi"):
-            mode = st.radio("Aksi:", ["Input", "Edit", "Hapus"])
+            mode = st.radio("Pilih Aksi:", ["Input", "Edit", "Hapus"])
+            
             if mode == "Input":
                 with st.form("f_add", clear_on_submit=True):
                     sk, nm, qt = st.text_input("SKU"), st.text_input("Nama"), st.number_input("Qty", 1)
                     jn, stn = st.selectbox("Jenis", ["Masuk", "Keluar"]), st.selectbox("Sat", ["Pcs", "Box", "Kg"])
-                    if st.form_submit_button("Simpan"):
+                    if st.form_submit_button("Simpan", use_container_width=True):
                         tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         full = f"{sk} | {nm} | {stn} | {st.session_state['current_user']} | - | -"
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full, jn, qt, now))
                         conn.commit(); conn.close(); st.rerun()
-            # (Logic Edit/Hapus disembunyikan untuk efisiensi code, tetap jalan di sistem)
+            
+            elif mode == "Edit" and not df_raw.empty:
+                edit_id = st.selectbox("ID Edit", df_raw['id'].sort_values(ascending=False))
+                row_edit = df_raw[df_raw['id'] == edit_id].iloc[0]
+                p_old = parse_inventory_name(row_edit['nama_barang'])
+                with st.form("f_edit"):
+                    e_nm = st.text_input("Nama Barang", value=p_old[1])
+                    e_qt = st.number_input("Qty", value=int(row_edit['jumlah']))
+                    if st.form_submit_button("Update", use_container_width=True):
+                        tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                        full_upd = f"{p_old[0]} | {e_nm} | {p_old[2]} | {p_old[3]} | {st.session_state['current_user']} | -"
+                        conn = init_connection(); cur = conn.cursor()
+                        cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, tanggal=%s WHERE id=%s", (full_upd, e_qt, now, int(edit_id)))
+                        conn.commit(); conn.close(); st.rerun()
 
-        if st.button("🚪 Keluar", use_container_width=True):
+            elif mode == "Hapus" and not df_raw.empty:
+                del_id = st.selectbox("ID Hapus", df_raw['id'].sort_values(ascending=False))
+                if st.button("🔴 KONFIRMASI HAPUS", use_container_width=True):
+                    conn = init_connection(); cur = conn.cursor()
+                    cur.execute("DELETE FROM inventory WHERE id = %s", (int(del_id),))
+                    conn.commit(); conn.close(); st.rerun()
+
+        if st.button("🚪 Logout", use_container_width=True):
             st.session_state["logged_in"] = False
             st.rerun()
 
-    # --- CONTENT DASHBOARD ---
+    # --- DASHBOARD CONTENT ---
     if not df_raw.empty:
-        # Pre-processing murni di Python
+        # Pre-processing
         p = df_raw['nama_barang'].apply(parse_inventory_name)
         df_raw['SKU'], df_raw['Item'], df_raw['Unit'] = p.str[0], p.str[1], p.str[2]
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
-        # Hitung Laporan
+        # Hitung Laporan Opname
         awal = df_raw[df_raw['tanggal'].dt.date < start_date].groupby('SKU')['adj'].sum().reset_index(name='Awal')
         mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
         df_p = df_raw.loc[mask].copy()
-        mut = df_p.groupby(['SKU', 'jenis_mutasi'])['jumlah'].sum().unstack(fill_value=0).reset_index()
         
+        mut = df_p.groupby(['SKU', 'jenis_mutasi'])['jumlah'].sum().unstack(fill_value=0).reset_index()
         for c in ['Masuk', 'Keluar']:
             if c not in mut: mut[c] = 0
 
@@ -127,7 +150,7 @@ else:
         res = pd.merge(res, mut[['SKU', 'Masuk', 'Keluar']], on='SKU', how='left').fillna(0)
         res['Saldo'] = res['Awal'] + res['Masuk'] - res['Keluar']
 
-        # --- HEADER DATA & CHART ---
+        # Header Section
         st.markdown("<h3 style='color:white;'>📊 Command Center Laporan</h3>", unsafe_allow_html=True)
         col_m1, col_m2, col_chart = st.columns([0.8, 0.8, 2.4])
         
@@ -140,17 +163,23 @@ else:
             top_5 = top_5[top_5['Keluar'] > 0]
             if not top_5.empty:
                 st.bar_chart(top_5.set_index('Item')['Keluar'], height=150)
-            else:
-                st.info("Tidak ada mutasi keluar di periode ini.")
+            else: st.info("Tidak ada mutasi keluar periode ini.")
 
-        # --- TABLE SECTION ---
+        # Laporan Opname Table
         st.markdown("### 📋 Ringkasan Stock Opname")
         st.dataframe(res[['SKU', 'Item', 'Unit', 'Awal', 'Masuk', 'Keluar', 'Saldo']], use_container_width=True, hide_index=True)
 
-        # --- FOOTER SECTION ---
+        # Footer Section
         b1, b2 = st.columns([1, 2])
         with b1:
             st.markdown("### 🏷️ Cetak Label")
-            s_sku = st.selectbox("SKU:", ["-"] + list(res['SKU']))
+            s_sku = st.selectbox("Pilih SKU:", ["-"] + list(res['SKU']))
             if s_sku != "-":
-                r = res[res['SKU'] == s_
+                r_data = res[res['SKU'] == s_sku].iloc[0]
+                st.markdown(f"<div class='label-box'><b>{r_data['SKU']}</b><br>{r_data['Item']}<br><small>Stok: {int(r_data['Saldo'])}</small></div>", unsafe_allow_html=True)
+        with b2:
+            st.markdown("### 📜 Log Pergerakan")
+            df_p['St'] = df_p['jenis_mutasi'].apply(lambda x: "🟢" if x == 'Masuk' else "🔴")
+            st.dataframe(df_p[['St', 'tanggal', 'SKU', 'Item', 'jumlah']], use_container_width=True, hide_index=True)
+    else:
+        st.info("Database masih kosong.")
