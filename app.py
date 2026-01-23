@@ -13,12 +13,6 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;700&display=swap');
     * { font-family: 'Plus Jakarta Sans', sans-serif; }
     .stApp { background: radial-gradient(circle at 0% 0%, #0f172a 0%, #020617 100%); }
-    .metric-card {
-        background: rgba(30, 41, 59, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        padding: 20px; border-radius: 16px; text-align: center; margin-bottom: 10px;
-    }
     [data-testid="stSidebar"] { background-color: #0f172a; border-right: 1px solid rgba(255, 255, 255, 0.05); }
     .stButton>button {
         background: linear-gradient(90deg, #38bdf8 0%, #2563eb 100%);
@@ -67,14 +61,13 @@ else:
             parts.append("-")
         return parts
 
-    # --- AMBIL DATA MASTER UNTUK AUTO-FILL ---
+    # --- PRE-LOAD DATA MASTER UNTUK AUTO-FILL ---
     conn = init_connection()
-    all_data_raw = pd.read_sql("SELECT nama_barang FROM inventory", conn)
-    conn.close()
-
+    all_raw = pd.read_sql("SELECT nama_barang FROM inventory", conn); conn.close()
+    
     sku_map = {}
-    if not all_data_raw.empty:
-        for entry in all_data_raw['nama_barang']:
+    if not all_raw.empty:
+        for entry in all_raw['nama_barang']:
             p = parse_inventory_name(entry)
             if p[0] != "-" and p[0] not in sku_map:
                 sku_map[p[0]] = {"nama": p[1], "satuan": p[2]}
@@ -101,9 +94,9 @@ else:
                     nama_final = st.text_input("Nama Barang", value=sku_map[selected_sku]["nama"])
                     sat_val = sku_map[selected_sku]["satuan"]
                 
-                sat_options = ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"]
-                sat_final = st.selectbox("Satuan", sat_options, 
-                                        index=sat_options.index(sat_val) if sat_val in sat_options else 0)
+                sat_opts = ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"]
+                sat_final = st.selectbox("Satuan", sat_opts, 
+                                        index=sat_opts.index(sat_val) if sat_val in sat_opts else 0)
                 
                 j_in = st.selectbox("Aksi", ["Masuk", "Keluar"])
                 q_in = st.number_input("Qty", min_value=1)
@@ -113,10 +106,8 @@ else:
                     if nama_final:
                         tz = pytz.timezone('Asia/Jakarta')
                         now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-                        sku_save = sku_final if sku_final else "-"
                         user_now = st.session_state['current_user']
-                        note_save = note_in if note_in else "-"
-                        full_entry = f"{sku_save} | {nama_final} | {sat_final} | {user_now} | {user_now} | {note_save}"
+                        full_entry = f"{sku_final if sku_final else '-'} | {nama_final} | {sat_final} | {user_now} | {user_now} | {note_in if note_in else '-'}"
                         
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_entry, j_in, q_in, now))
@@ -127,30 +118,26 @@ else:
         with st.expander("📝 Edit Transaksi"):
             try:
                 conn = init_connection()
-                raw_edit = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah FROM inventory ORDER BY tanggal DESC", conn)
-                conn.close()
+                raw_edit = pd.read_sql("SELECT id, nama_barang, jenis_mutasi, jumlah FROM inventory ORDER BY tanggal DESC", conn); conn.close()
                 if not raw_edit.empty:
                     selected_id = st.selectbox("Pilih ID Data:", raw_edit['id'])
-                    row_to_edit = raw_edit[raw_edit['id'] == selected_id].iloc[0]
-                    p_old = parse_inventory_name(row_to_edit['nama_barang'])
+                    row_edit = raw_edit[raw_edit['id'] == selected_id].iloc[0]
+                    p_old = parse_inventory_name(row_edit['nama_barang'])
                     
                     with st.form("edit_form"):
                         e_sku = st.text_input("SKU", value=p_old[0])
                         e_nama = st.text_input("Nama Barang", value=p_old[1])
                         e_sat = st.selectbox("Satuan", ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"], 
                                            index=["Pcs", "Box", "Set", "Kg", "Liter", "Meter"].index(p_old[2]) if p_old[2] in ["Pcs", "Box", "Set", "Kg", "Liter", "Meter"] else 0)
-                        e_aksi = st.selectbox("Aksi", ["Masuk", "Keluar"], index=0 if row_to_edit['jenis_mutasi'] == "Masuk" else 1)
-                        e_qty = st.number_input("Qty", min_value=1, value=int(row_to_edit['jumlah']))
+                        e_aksi = st.selectbox("Aksi", ["Masuk", "Keluar"], index=0 if row_edit['jenis_mutasi'] == "Masuk" else 1)
+                        e_qty = st.number_input("Qty", min_value=1, value=int(row_edit['jumlah']))
                         e_note = st.text_input("Keterangan", value=p_old[5])
                         
                         if st.form_submit_button("UPDATE DATA", use_container_width=True):
-                            tz = pytz.timezone('Asia/Jakarta')
-                            edit_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
-                            user_now = st.session_state['current_user']
-                            new_entry = f"{e_sku} | {e_nama} | {e_sat} | {p_old[3]} | {user_now} | {e_note}"
+                            tz = pytz.timezone('Asia/Jakarta'); edit_time = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                            new_entry = f"{e_sku} | {e_nama} | {e_sat} | {p_old[3]} | {st.session_state['current_user']} | {e_note}"
                             conn = init_connection(); cur = conn.cursor()
-                            query = "UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s, tanggal=%s WHERE id=%s"
-                            cur.execute(query, (new_entry, e_aksi, e_qty, edit_time, int(selected_id)))
+                            cur.execute("UPDATE inventory SET nama_barang=%s, jenis_mutasi=%s, jumlah=%s, tanggal=%s WHERE id=%s", (new_entry, e_aksi, e_qty, edit_time, int(selected_id)))
                             conn.commit(); conn.close()
                             st.rerun()
             except Exception as e: st.write(f"Error: {e}")
@@ -186,29 +173,31 @@ else:
             df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
             df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
+            # --- RINGKASAN STOK (MASTER ITEM PERSISTENCE) ---
             master_items = df_raw[['SKU', 'Item Name', 'Unit']].drop_duplicates()
             stok_rekap = df_raw.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
-            stok_df = pd.merge(master_items, stok_rekap, on=['SKU', 'Item Name', 'Unit'], how='left')
-            stok_df['adj'] = stok_df['adj'].fillna(0)
+            stok_df = pd.merge(master_items, stok_rekap, on=['SKU', 'Item Name', 'Unit'], how='left').fillna(0)
             stok_df.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
 
             st.markdown("### 📊 Ringkasan Stok (Alert < 5)")
-            def color_low_stock(row):
-                if row['Sisa Stok'] < 5:
-                    return ['background-color: #991b1b; color: white; font-weight: bold'] * len(row)
-                return [''] * len(row)
-
-            st.dataframe(stok_df.style.apply(color_low_stock, axis=1), use_container_width=True, hide_index=True)
+            st.dataframe(stok_df.style.apply(lambda r: ['background-color: #991b1b; color: white' if r['Sisa Stok'] < 5 else ''] * len(r), axis=1), use_container_width=True, hide_index=True)
 
             st.write("---")
+            
+            # --- LOG TRANSAKSI DENGAN WARNA MUTASI ---
             st.markdown("### 📜 Log Transaksi & Audit")
+            
+            def color_rows(row):
+                color = '#4ade80' if row['jenis_mutasi'] == 'Masuk' else '#f87171'
+                return [f'color: {color}; font-weight: 500'] * len(row)
+
             df_display = df_raw.sort_values(by='tanggal', ascending=False)
-            st.dataframe(df_display[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Keterangan', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']], 
-                         use_container_width=True, hide_index=True,
-                         column_config={
-                             "id": "ID",
-                             "tanggal": st.column_config.DatetimeColumn("Update", format="D MMM, HH:mm"),
-                         })
+            st.dataframe(
+                df_display[['id', 'tanggal', 'SKU', 'Item Name', 'Unit', 'Keterangan', 'Input By', 'Edited By', 'jenis_mutasi', 'jumlah']]
+                .style.apply(color_rows, axis=1), 
+                use_container_width=True, hide_index=True,
+                column_config={"tanggal": st.column_config.DatetimeColumn("Update", format="D MMM, HH:mm")}
+            )
         else:
             st.info("Data kosong.")
     except Exception as e: st.error(f"Error: {e}")
