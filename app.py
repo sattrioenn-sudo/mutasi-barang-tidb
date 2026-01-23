@@ -1,7 +1,7 @@
 import streamlit as st
 import mysql.connector
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 
 # 1. Konfigurasi Halaman
@@ -77,9 +77,13 @@ else:
     # --- SIDEBAR ---
     with st.sidebar:
         st.markdown(f"**User Active:** `{st.session_state['current_user'].upper()}`")
-        if st.button("🚪 LOGOUT", use_container_width=True):
-            st.session_state["logged_in"] = False
-            st.rerun()
+        
+        # --- FITUR BARU: FILTER PERIODE ---
+        st.markdown("---")
+        st.markdown("### 🔍 Filter Periode")
+        today = datetime.now()
+        start_date = st.date_input("Tanggal Mulai", today - timedelta(days=30))
+        end_date = st.date_input("Tanggal Akhir", today)
         
         st.markdown("---")
         
@@ -94,8 +98,7 @@ else:
                 note_f = st.text_input("Ket")
                 if st.form_submit_button("SIMPAN DATA", use_container_width=True):
                     if sku_f and nama_f:
-                        tz = pytz.timezone('Asia/Jakarta')
-                        now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                        tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         u = st.session_state['current_user']
                         full = f"{sku_f} | {nama_f} | {sat_f} | {u} | {u} | {note_f if note_f else '-'}"
                         conn = init_connection(); cur = conn.cursor()
@@ -105,7 +108,7 @@ else:
         # 2. EDIT DATA
         with st.expander("📝 Edit Transaksi"):
             if not df_raw.empty:
-                edit_id = st.selectbox("Pilih ID Edit", df_raw['id'].sort_values(ascending=False))
+                edit_id = st.selectbox("ID Edit", df_raw['id'].sort_values(ascending=False))
                 row_edit = df_raw[df_raw['id'] == edit_id].iloc[0]
                 p_old = parse_inventory_name(row_edit['nama_barang'])
                 with st.form("edit_form"):
@@ -116,7 +119,6 @@ else:
                     if st.form_submit_button("UPDATE"):
                         tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                         u = st.session_state['current_user']
-                        # Tetap pertahankan input_by (p_old[3])
                         full_upd = f"{e_sku} | {e_nama} | {p_old[2]} | {p_old[3]} | {u} | {e_note}"
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, tanggal=%s WHERE id=%s", (full_upd, e_qty, now, int(edit_id)))
@@ -125,42 +127,55 @@ else:
         # 3. HAPUS DATA
         with st.expander("🗑️ Hapus Transaksi"):
             if not df_raw.empty:
-                del_id = st.selectbox("Pilih ID Hapus", df_raw['id'].sort_values(ascending=False))
+                del_id = st.selectbox("ID Hapus", df_raw['id'].sort_values(ascending=False))
                 if st.button("KONFIRMASI HAPUS"):
                     conn = init_connection(); cur = conn.cursor()
                     cur.execute("DELETE FROM inventory WHERE id = %s", (int(del_id),))
                     conn.commit(); conn.close(); st.rerun()
 
+        if st.button("🚪 LOGOUT", use_container_width=True):
+            st.session_state["logged_in"] = False
+            st.rerun()
+
     # --- DASHBOARD UTAMA ---
     st.markdown("<h1 style='color: white;'>Inventory Overview</h1>", unsafe_allow_html=True)
     
     if not df_raw.empty:
+        # Pre-processing Data
         parsed = df_raw['nama_barang'].apply(parse_inventory_name)
         df_raw['SKU'] = parsed.str[0]; df_raw['Item Name'] = parsed.str[1]
         df_raw['Unit'] = parsed.str[2]; df_raw['Keterangan'] = parsed.str[5]
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
-        df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
-        df_raw['Status'] = df_raw['jenis_mutasi'].apply(lambda x: "🟢 MASUK" if x == 'Masuk' else "🔴 KELUAR")
-
-        # Section: Stok & Label
-        st.markdown("### 📊 Stok & Label")
-        stok_rekap = df_raw.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
-        stok_rekap.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
         
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            st.dataframe(stok_rekap, use_container_width=True, hide_index=True)
-        with c2:
-            t_sku = st.selectbox("Cetak Label SKU", ["-- Pilih --"] + list(stok_rekap['SKU']))
-            if t_sku != "-- Pilih --":
-                r_l = stok_rekap[stok_rekap['SKU'] == t_sku].iloc[0]
-                st.markdown(f'<div class="label-box"><h2>{r_l["SKU"]}</h2><p><b>{r_l["Produk"]}</b></p><small>{r_l["Satuan"]} | STOK: {r_l["Sisa Stok"]}</small></div>', unsafe_allow_html=True)
+        # --- LOGIKA FILTER PERIODE ---
+        mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
+        df_filtered = df_raw.loc[mask].copy()
 
-        # Section: Log
-        st.markdown("### 📜 Log Transaksi")
-        df_display = df_raw.sort_values(by='tanggal', ascending=False)
-        st.dataframe(df_display[['id', 'Status', 'tanggal', 'SKU', 'Item Name', 'jumlah', 'Unit', 'Keterangan']], 
-                     use_container_width=True, hide_index=True,
-                     column_config={"tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm")})
+        if not df_filtered.empty:
+            df_filtered['adj'] = df_filtered.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
+            df_filtered['Status'] = df_filtered['jenis_mutasi'].apply(lambda x: "🟢 MASUK" if x == 'Masuk' else "🔴 KELUAR")
+
+            # Section: Stok & Label
+            st.markdown(f"### 📊 Stok Periode: {start_date.strftime('%d/%m/%y')} - {end_date.strftime('%d/%m/%y')}")
+            stok_rekap = df_filtered.groupby(['SKU', 'Item Name', 'Unit'])['adj'].sum().reset_index()
+            stok_rekap.columns = ['SKU', 'Produk', 'Satuan', 'Sisa Stok']
+            
+            c1, c2 = st.columns([2, 1])
+            with c1:
+                st.dataframe(stok_rekap, use_container_width=True, hide_index=True)
+            with c2:
+                t_sku = st.selectbox("Cetak Label SKU", ["-- Pilih --"] + list(stok_rekap['SKU']))
+                if t_sku != "-- Pilih --":
+                    r_l = stok_rekap[stok_rekap['SKU'] == t_sku].iloc[0]
+                    st.markdown(f'<div class="label-box"><h2>{r_l["SKU"]}</h2><p><b>{r_l["Produk"]}</b></p><small>{r_l["Satuan"]} | STOK: {r_l["Sisa Stok"]}</small></div>', unsafe_allow_html=True)
+
+            # Section: Log
+            st.markdown("### 📜 Log Transaksi Periode Ini")
+            df_display = df_filtered.sort_values(by='tanggal', ascending=False)
+            st.dataframe(df_display[['id', 'Status', 'tanggal', 'SKU', 'Item Name', 'jumlah', 'Unit', 'Keterangan']], 
+                         use_container_width=True, hide_index=True,
+                         column_config={"tanggal": st.column_config.DatetimeColumn("Waktu", format="D MMM, HH:mm")})
+        else:
+            st.warning(f"Tidak ada data ditemukan pada periode {start_date} hingga {end_date}")
     else:
-        st.info("Belum ada data.")
+        st.info("Belum ada data di database.")
