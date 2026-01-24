@@ -10,8 +10,7 @@ st.set_page_config(page_title="SATRIO POS PRO", page_icon="⚡", layout="wide")
 # Inisialisasi User & Permissions (Data Session)
 if "user_db" not in st.session_state:
     st.session_state["user_db"] = {
-        "admin": ["admin123", "Admin", ["Dashboard", "Input", "Edit", "Hapus", "User Management"]],
-        "staff1": ["staff123", "Staff", ["Dashboard", "Input"]]
+        "admin": ["kcs_2026", "Admin", ["Dashboard", "Input", "Edit", "Hapus", "User Management"]]
     }
 
 # --- CSS CUSTOM ---
