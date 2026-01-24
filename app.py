@@ -23,8 +23,6 @@ st.markdown("""
         background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px);
         padding: 20px; border-radius: 15px; border: 1px solid rgba(255, 255, 255, 0.1);
     }
-    .metric-label { color: #94a3b8; font-size: 0.85rem; font-weight: 600; text-transform: uppercase; }
-    .metric-value { color: #ffffff; font-size: 2.2rem; font-weight: 800; }
     [data-testid="stSidebar"] { background-color: rgba(15, 23, 42, 0.95) !important; }
     </style>
     """, unsafe_allow_html=True)
@@ -63,12 +61,24 @@ else:
     role_aktif = st.session_state["user_role"]
     izin_user = st.session_state["user_perms"]
 
-    # --- LOAD DATA ---
+    # --- GLOBAL DATA LOADING (PENTING AGAR DATA TIDAK HILANG) ---
     try:
         conn = init_connection()
         df_raw = pd.read_sql("SELECT * FROM inventory ORDER BY id DESC", conn)
         conn.close()
     except: df_raw = pd.DataFrame()
+
+    # --- GLOBAL DATA PROCESSING ---
+    if not df_raw.empty:
+        p_data = df_raw['nama_barang'].apply(parse_detail)
+        df_raw['SKU'] = p_data.apply(lambda x: x[0])
+        df_raw['Item'] = p_data.apply(lambda x: x[1])
+        df_raw['Unit'] = p_data.apply(lambda x: x[2])
+        df_raw['Pembuat'] = p_data.apply(lambda x: x[3])
+        df_raw['Editor'] = p_data.apply(lambda x: x[4])
+        df_raw['Ket'] = p_data.apply(lambda x: x[5])
+        df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
+        df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
     # --- SIDEBAR DYNAMIC ---
     with st.sidebar:
@@ -87,17 +97,23 @@ else:
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state["logged_in"] = False; st.rerun()
 
+    # --- DATA FILTERING BY DATE ---
+    if not df_raw.empty:
+        mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
+        df_f = df_raw.loc[mask].copy()
+    else:
+        df_f = pd.DataFrame()
+
     # --- UI LOGIC ---
     if menu == "📊 Dashboard":
         st.markdown("<h2 style='color:white;'>📈 Dashboard Analytics</h2>", unsafe_allow_html=True)
-        # ... (Kode metrik dashboard tetap sama seperti sebelumnya)
-        if not df_raw.empty:
-            p_data = df_raw['nama_barang'].apply(parse_detail)
-            df_raw['SKU'], df_raw['Item'], df_raw['Unit'], df_raw['Pembuat'], df_raw['Editor'], df_raw['Ket'] = p_data.apply(lambda x: x[0]), p_data.apply(lambda x: x[1]), p_data.apply(lambda x: x[2]), p_data.apply(lambda x: x[3]), p_data.apply(lambda x: x[4]), p_data.apply(lambda x: x[5])
-            df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
-            df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
-            mask = (df_raw['tanggal'].dt.date >= start_date) & (df_raw['tanggal'].dt.date <= end_date)
-            df_f = df_raw.loc[mask].copy()
+        if not df_f.empty:
+            m1, m2, m3, m4 = st.columns(4)
+            stok_skr = df_raw.groupby(['SKU', 'Item', 'Unit'])['adj'].sum().reset_index(name='Stok')
+            m1.metric("Masuk", int(df_f[df_f['jenis_mutasi']=='Masuk']['jumlah'].sum()))
+            m2.metric("Keluar", int(df_f[df_f['jenis_mutasi']=='Keluar']['jumlah'].sum()))
+            m3.metric("Total SKU", len(stok_skr))
+            m4.metric("Stok On Hand", int(stok_skr['Stok'].sum()))
             st.dataframe(df_f[['id', 'tanggal', 'Item', 'jenis_mutasi', 'jumlah', 'Unit', 'Pembuat', 'Editor', 'Ket']], use_container_width=True, hide_index=True)
 
     elif menu == "➕ Input Barang":
@@ -114,70 +130,72 @@ else:
 
     elif menu == "🔧 Kontrol Transaksi":
         st.markdown("<h2 style='color:white;'>🔧 Transaction Control</h2>", unsafe_allow_html=True)
-        # ... (Logika tab edit/hapus tetap sama)
+        if df_raw.empty:
+            st.warning("Database Kosong!")
+        else:
+            tabs_visible = []
+            if "Edit" in izin_user: tabs_visible.append("✏️ Edit")
+            if "Hapus" in izin_user: tabs_visible.append("🗑️ Hapus")
+            
+            t_items = st.tabs(tabs_visible)
+            for i, tab_name in enumerate(tabs_visible):
+                with t_items[i]:
+                    if "Edit" in tab_name:
+                        df_raw['sel'] = df_raw.apply(lambda x: f"ID:{x['id']} | {x['Item']} ({x['jenis_mutasi']})", axis=1)
+                        choice = st.selectbox("Pilih Data", df_raw['sel'], key="sb_edit")
+                        tid = int(choice.split('|')[0].replace('ID:','').strip())
+                        row = df_raw[df_raw['id'] == tid].iloc[0]
+                        p = parse_detail(row['nama_barang'])
+                        with st.form("form_edit"):
+                            enm = st.text_input("Nama Barang", value=p[1]); eqt = st.number_input("Qty", value=int(row['jumlah']))
+                            if st.form_submit_button("UPDATE"):
+                                tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
+                                upd_val = f"{p[0]} | {enm} | {p[2]} | {p[3]} | {user_aktif} | {p[5]}"
+                                conn = init_connection(); cur = conn.cursor()
+                                cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, tanggal=%s WHERE id=%s", (upd_val, eqt, now, tid))
+                                conn.commit(); conn.close(); st.success("Updated!"); st.rerun()
+                    else:
+                        did = st.selectbox("ID Hapus", df_raw['id'], key="sb_del")
+                        if st.button("KONFIRMASI HAPUS PERMANEN"):
+                            conn = init_connection(); cur = conn.cursor(); cur.execute("DELETE FROM inventory WHERE id = %s", (int(did),))
+                            conn.commit(); conn.close(); st.warning("Deleted!"); st.rerun()
 
     elif menu == "👥 Manajemen User":
-        st.markdown("<h2 style='color:white;'>👥 User Access & Password Control</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='color:white;'>👥 User & Password Control</h2>", unsafe_allow_html=True)
+        all_u = list(st.session_state["user_db"].keys())
+        st.table(pd.DataFrame([{"User": k, "Pass": v[0], "Role": v[1], "Izin": ", ".join(v[2])} for k, v in st.session_state["user_db"].items()]))
         
-        # 1. Tabel User Aktif
-        df_users = pd.DataFrame([
-            {"Username": k, "Password": v[0], "Role": v[1], "Izin": ", ".join(v[2])} 
-            for k, v in st.session_state["user_db"].items()
-        ])
-        st.dataframe(df_users, use_container_width=True, hide_index=True)
-        
-        st.markdown("---")
-        
-        # 2. Form Manajemen (Bisa Tambah atau Edit Password)
-        tab_manage, tab_delete = st.tabs(["⚙️ Tambah / Edit User", "🗑️ Hapus Akses"])
-        
-        with tab_manage:
-            st.markdown("### 🔑 Form Konfigurasi Akun")
-            # Fitur Utama: Dropdown untuk memilih user yang sudah ada (termasuk admin) atau ketik baru
-            all_users = list(st.session_state["user_db"].keys())
-            selected_u = st.selectbox("Pilih User untuk Diedit (Atau biarkan untuk Tambah Baru)", ["-- Tambah User Baru --"] + all_users)
-            
-            with st.form("form_user_edit"):
-                if selected_u == "-- Tambah User Baru --":
-                    new_u = st.text_input("Username Baru")
-                    curr_p, curr_r, curr_i = "", "Staff", ["Dashboard", "Input"]
+        tab_e, tab_d = st.tabs(["⚙️ Tambah / Edit User", "🗑️ Hapus User"])
+        with tab_e:
+            sel_u = st.selectbox("Pilih Akun", ["-- Tambah Baru --"] + all_u)
+            with st.form("f_user"):
+                if sel_u == "-- Tambah Baru --":
+                    un, ps, rl, iz = st.text_input("Username"), "", "Staff", ["Dashboard", "Input"]
                 else:
-                    new_u = st.text_input("Username (Tetap)", value=selected_u, disabled=True)
-                    curr_p = st.session_state["user_db"][selected_u][0]
-                    curr_r = st.session_state["user_db"][selected_u][1]
-                    curr_i = st.session_state["user_db"][selected_u][2]
+                    un = st.text_input("Username", value=sel_u, disabled=True)
+                    ps, rl, iz = st.session_state["user_db"][sel_u][0], st.session_state["user_db"][sel_u][1], st.session_state["user_db"][sel_u][2]
                 
-                new_p = st.text_input("Password", value=curr_p)
-                new_r = st.selectbox("Role", ["Staff", "Admin"], index=0 if curr_r == "Staff" else 1)
-                
-                st.write("**Set Izin Fitur:**")
+                new_ps = st.text_input("Password", value=ps)
+                new_rl = st.selectbox("Role", ["Staff", "Admin"], index=0 if rl=="Staff" else 1)
+                st.write("Izin:")
                 c1, c2, c3, c4, c5 = st.columns(5)
-                i_dash = c1.checkbox("Dashboard", "Dashboard" in curr_i)
-                i_in = c2.checkbox("Input", "Input" in curr_i)
-                i_edit = c3.checkbox("Edit", "Edit" in curr_i)
-                i_del = c4.checkbox("Hapus", "Hapus" in curr_i)
-                i_mgmt = c5.checkbox("User Management", "User Management" in curr_i)
+                i1 = c1.checkbox("Dashboard", "Dashboard" in iz)
+                i2 = c2.checkbox("Input", "Input" in iz)
+                i3 = c3.checkbox("Edit", "Edit" in iz)
+                i4 = c4.checkbox("Hapus", "Hapus" in iz)
+                i5 = c5.checkbox("User Management", "User Management" in iz)
                 
-                if st.form_submit_button("SIMPAN PERUBAHAN / USER BARU", use_container_width=True):
-                    final_u = selected_u if selected_u != "-- Tambah User Baru --" else new_u
-                    if final_u:
-                        perms = []
-                        if i_dash: perms.append("Dashboard")
-                        if i_in: perms.append("Input")
-                        if i_edit: perms.append("Edit")
-                        if i_del: perms.append("Hapus")
-                        if i_mgmt: perms.append("User Management")
-                        
-                        st.session_state["user_db"][final_u] = [new_p, new_r, perms]
-                        st.success(f"Akun {final_u} Berhasil Diperbarui!")
-                        st.rerun()
-                    else:
-                        st.error("Username tidak boleh kosong!")
-
-        with tab_delete:
-            st.markdown("### ❌ Hapus User")
-            u_to_del = st.selectbox("Pilih User untuk Dihapus", ["-"] + [u for u in all_users if u != user_aktif])
-            if st.button("KONFIRMASI HAPUS", use_container_width=True) and u_to_del != "-":
-                del st.session_state["user_db"][u_to_del]
-                st.warning(f"User {u_to_del} telah dihapus!")
-                st.rerun()
+                if st.form_submit_button("SIMPAN"):
+                    target_u = sel_u if sel_u != "-- Tambah Baru --" else un
+                    new_perms = []
+                    if i1: new_perms.append("Dashboard")
+                    if i2: new_perms.append("Input")
+                    if i3: new_perms.append("Edit")
+                    if i4: new_perms.append("Hapus")
+                    if i5: new_perms.append("User Management")
+                    st.session_state["user_db"][target_u] = [new_ps, new_rl, new_perms]
+                    st.success("User Berhasil Disimpan!"); st.rerun()
+        with tab_d:
+            u_del = st.selectbox("Pilih User Hapus", [u for u in all_u if u != user_aktif])
+            if st.button("HAPUS USER"):
+                del st.session_state["user_db"][u_del]; st.rerun()
