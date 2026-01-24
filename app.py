@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pytz
 
 # 1. Konfigurasi Halaman & UI Premium
-st.set_page_config(page_title="PRIME-POS RETAIL PRO", page_icon="📈", layout="wide")
+st.set_page_config(page_title="RETAIL-SATRIO", page_icon="📈", layout="wide")
 
 # Inisialisasi User di Memori (Session State)
 if "user_db" not in st.session_state:
