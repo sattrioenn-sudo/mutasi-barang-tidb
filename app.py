@@ -43,7 +43,7 @@ if not st.session_state["logged_in"]:
     st.markdown("<br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1.2, 1])
     with col2:
-        st.markdown("<h2 style='text-align:center; color:white;'>🚀 LOGIN PRIME-POS</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align:center; color:white;'>🚀 LOGIN TOKO SATRIO</h2>", unsafe_allow_html=True)
         with st.form("login"):
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
