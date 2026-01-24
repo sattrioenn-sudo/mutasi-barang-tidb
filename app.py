@@ -11,7 +11,7 @@ st.set_page_config(page_title="SATRIO POS PRO", page_icon="⚡", layout="wide")
 # Inisialisasi User & Permissions
 if "user_db" not in st.session_state:
     st.session_state["user_db"] = {
-        "admin": ["kcs_2026", "Admin", ["Dashboard", "Input", "Edit", "Hapus", "User Management"]]
+        "admin": ["kcs_2026", "Admin", ["Dashboard", "Input", "Edit", "User Management"]]
     }
 
 # --- CSS CUSTOM PREMIUM DESIGN ---
@@ -202,7 +202,7 @@ else:
                     conn.commit(); conn.close(); st.warning(f"Data ID {did} Berhasil Dihapus!"); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- MENU: USER MANAGEMENT (DYNAMIC ROLE) ---
+    # --- MENU: USER MANAGEMENT (DYNAMIC ROLE + DELETE) ---
     elif menu == "👥 Manajemen User":
         st.markdown("<h2><span style='color:#38bdf8;'>👥</span> User Access Control</h2>", unsafe_allow_html=True)
         c_list, c_form = st.columns([3, 2])
@@ -217,18 +217,16 @@ else:
         with c_form:
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
             st.markdown("##### 🔑 Kelola Akun")
-            m_user = st.radio("Aksi:", ["Tambah Baru", "Edit User"], horizontal=True)
+            m_user = st.radio("Aksi:", ["Tambah Baru", "Edit / Hapus User"], horizontal=True)
             
             with st.form("form_user_dynamic"):
                 if m_user == "Tambah Baru":
                     un_input = st.text_input("Username")
                     ps_input = st.text_input("Password", type="password")
-                    # Diubah menjadi text_input agar bisa diisi bebas (IT Department, dsb)
                     rl_input = st.text_input("Level Jabatan", placeholder="Contoh: IT Department")
                 else:
                     un_input = st.selectbox("Pilih User:", list(st.session_state["user_db"].keys()))
                     ps_input = st.text_input("Ganti Password", value=st.session_state["user_db"][un_input][0])
-                    # Diubah menjadi text_input agar bisa diedit bebas
                     rl_input = st.text_input("Level Jabatan", value=st.session_state["user_db"][un_input][1])
                 
                 st.write("Izin Akses:")
@@ -237,7 +235,14 @@ else:
                 i_edit = st.checkbox("Kontrol/Edit", value=False)
                 i_um = st.checkbox("User Management", value=False)
                 
-                if st.form_submit_button("💾 SIMPAN PENGATURAN USER", use_container_width=True):
+                col_btn1, col_btn2 = st.columns([2, 1])
+                with col_btn1:
+                    save_user = st.form_submit_button("💾 SIMPAN KONFIGURASI", use_container_width=True)
+                with col_btn2:
+                    # Tombol hapus hanya aktif di mode Edit
+                    del_user = st.form_submit_button("🗑️ HAPUS") if m_user == "Edit / Hapus User" else False
+                
+                if save_user:
                     if un_input and rl_input:
                         perms = []
                         if i_dash: perms.append("Dashboard")
@@ -245,6 +250,13 @@ else:
                         if i_edit: perms.append("Edit")
                         if i_um: perms.append("User Management")
                         st.session_state["user_db"][un_input] = [ps_input, rl_input, perms]
-                        st.success(f"User {un_input} ({rl_input}) Disimpan!"); st.rerun()
-                    else: st.error("Username dan Jabatan wajib diisi!")
+                        st.success(f"User {un_input} berhasil diperbarui!"); st.rerun()
+                    else: st.error("Lengkapi data!")
+
+                if del_user:
+                    if un_input == "admin":
+                        st.error("Admin utama tidak bisa dihapus!")
+                    else:
+                        del st.session_state["user_db"][un_input]
+                        st.warning(f"User {un_input} telah dihapus!"); st.rerun()
             st.markdown("</div>", unsafe_allow_html=True)
