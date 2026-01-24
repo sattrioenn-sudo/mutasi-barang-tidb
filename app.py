@@ -21,7 +21,6 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
     .stApp { background: radial-gradient(circle at 20% 10%, #1e293b 0%, #0f172a 100%); color: #f8fafc; }
     
-    /* Glassmorphism Container */
     .glass-card {
         background: rgba(30, 41, 59, 0.4);
         border: 1px solid rgba(255, 255, 255, 0.1);
@@ -31,19 +30,14 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* Metrics & Charts */
     .metric-container {
         background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(255, 255, 255, 0.1);
         padding: 1.5rem; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.2);
     }
     
-    /* Sidebar Styling */
     [data-testid="stSidebar"] { background-color: rgba(15, 23, 42, 0.9) !important; }
-    
-    /* Titles */
     h1, h2, h3 { color: #f8fafc !important; font-weight: 800 !important; letter-spacing: -0.5px; }
     
-    /* Buttons */
     .stButton>button { 
         border-radius: 12px !important; 
         background: linear-gradient(90deg, #0ea5e9, #2563eb) !important; 
@@ -52,7 +46,6 @@ st.markdown("""
     }
     .stButton>button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(14, 165, 233, 0.4); }
     
-    /* Status Warning Box */
     .danger-zone {
         background: rgba(244, 63, 94, 0.1);
         border: 1px solid rgba(244, 63, 94, 0.2);
@@ -91,7 +84,7 @@ if not st.session_state["logged_in"]:
 else:
     user_aktif, role_aktif, izin_user = st.session_state["current_user"], st.session_state["user_role"], st.session_state["user_perms"]
 
-    # Load & Process Data
+    # Load Data
     try:
         conn = init_connection()
         df_raw = pd.read_sql("SELECT * FROM inventory ORDER BY id DESC", conn)
@@ -145,13 +138,11 @@ else:
                 fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
                 st.plotly_chart(fig_pie, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.info("Database masih kosong, Bro!")
+        else: st.info("Database masih kosong!")
 
-    # --- MENU: INPUT (REVISED UI) ---
+    # --- MENU: INPUT ---
     elif menu == "➕ Input Barang":
         st.markdown("<h2><span style='color:#38bdf8;'>➕</span> Pencatatan Transaksi Baru</h2>", unsafe_allow_html=True)
-        
         with st.container():
             st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
             with st.form("input_form_revised", clear_on_submit=True):
@@ -161,14 +152,11 @@ else:
                     sk = st.text_input("SKU / Barcode", placeholder="Contoh: SN-001")
                     nm = st.text_input("Nama Lengkap Barang", placeholder="Masukan nama produk...")
                     stn = st.selectbox("Satuan", ["Pcs", "Box", "Kg", "Unit", "Liter", "Meter"])
-                
                 with c2:
                     st.markdown("##### 🔄 Logistik & Mutasi")
                     jn = st.selectbox("Jenis Transaksi", ["Masuk", "Keluar"])
                     qt = st.number_input("Jumlah Barang", min_value=1, step=1)
                     ke = st.text_area("Keterangan Tambahan", placeholder="Catatan opsional...", height=68)
-                
-                st.markdown("<br>", unsafe_allow_html=True)
                 if st.form_submit_button("💾 SIMPAN KE CLOUD DATABASE", use_container_width=True):
                     if sk and nm:
                         tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
@@ -176,27 +164,22 @@ else:
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_val, jn, qt, now))
                         conn.commit(); conn.close()
-                        st.balloons(); st.success(f"Data {nm} Berhasil Dicatat!")
-                        st.rerun()
+                        st.balloons(); st.success(f"Data {nm} Berhasil Dicatat!"); st.rerun()
                     else: st.warning("Harap isi SKU dan Nama Barang!")
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- MENU: KONTROL (REVISED UI) ---
+    # --- MENU: KONTROL ---
     elif menu == "🔧 Kontrol Transaksi":
         st.markdown("<h2><span style='color:#38bdf8;'>🔧</span> Control Management</h2>", unsafe_allow_html=True)
-        
-        if df_raw.empty:
-            st.warning("Data tidak ditemukan.")
+        if df_raw.empty: st.warning("Data tidak ditemukan.")
         else:
             t_edit, t_delete = st.tabs(["✏️ Mode Edit Cepat", "🗑️ Penghapusan Data"])
-            
             with t_edit:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
                 choice = st.selectbox("Pilih item yang ingin dikoreksi:", df_raw.apply(lambda x: f"ID:{x['id']} | {x['Item']} ({x['jenis_mutasi']})", axis=1))
                 tid = int(choice.split('|')[0].replace('ID:','').strip())
                 row = df_raw[df_raw['id'] == tid].iloc[0]
                 p = parse_detail(row['nama_barang'])
-                
                 with st.form("form_edit_revised"):
                     ec1, ec2 = st.columns(2)
                     with ec1:
@@ -205,34 +188,29 @@ else:
                     with ec2:
                         ejn = st.selectbox("Revisi Jenis", ["Masuk", "Keluar"], index=0 if row['jenis_mutasi'] == "Masuk" else 1)
                         eke = st.text_input("Revisi Catatan", value=p[5])
-                    
                     if st.form_submit_button("✅ KONFIRMASI PERUBAHAN", use_container_width=True):
                         upd_val = f"{p[0]} | {enm} | {p[2]} | {p[3]} | {user_aktif} | {eke}"
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, jenis_mutasi=%s WHERE id=%s", (upd_val, eqt, ejn, tid))
                         conn.commit(); conn.close(); st.success("Database telah diperbarui!"); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
-            
             with t_delete:
                 st.markdown("<div class='danger-zone'>", unsafe_allow_html=True)
-                st.subheader("🗑️ Hapus Transaksi")
-                st.write("Tindakan ini permanen. Pilih ID yang akan dihapus dari sistem:")
                 did = st.selectbox("Pilih ID Transaksi:", df_raw['id'])
                 if st.button("🔥 HAPUS DATA PERMANEN", use_container_width=True):
                     conn = init_connection(); cur = conn.cursor(); cur.execute("DELETE FROM inventory WHERE id = %s", (int(did),))
                     conn.commit(); conn.close(); st.warning(f"Data ID {did} Berhasil Dihapus!"); st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- MENU: USER MANAGEMENT (REVISED UI) ---
+    # --- MENU: USER MANAGEMENT (DYNAMIC ROLE) ---
     elif menu == "👥 Manajemen User":
         st.markdown("<h2><span style='color:#38bdf8;'>👥</span> User Access Control</h2>", unsafe_allow_html=True)
-        
         c_list, c_form = st.columns([3, 2])
         
         with c_list:
             st.markdown("<div class='glass-card' style='height: 100%;'>", unsafe_allow_html=True)
             st.markdown("##### 👥 Daftar Pengguna")
-            u_data = [{"User": k, "Role": v[1], "Akses": " • ".join(v[2])} for k, v in st.session_state["user_db"].items()]
+            u_data = [{"User": k, "Jabatan": v[1], "Akses": " • ".join(v[2])} for k, v in st.session_state["user_db"].items()]
             st.dataframe(pd.DataFrame(u_data), use_container_width=True, hide_index=True)
             st.markdown("</div>", unsafe_allow_html=True)
             
@@ -241,15 +219,18 @@ else:
             st.markdown("##### 🔑 Kelola Akun")
             m_user = st.radio("Aksi:", ["Tambah Baru", "Edit User"], horizontal=True)
             
-            with st.form("form_user_revised"):
+            with st.form("form_user_dynamic"):
                 if m_user == "Tambah Baru":
                     un_input = st.text_input("Username")
                     ps_input = st.text_input("Password", type="password")
+                    # Diubah menjadi text_input agar bisa diisi bebas (IT Department, dsb)
+                    rl_input = st.text_input("Level Jabatan", placeholder="Contoh: IT Department")
                 else:
                     un_input = st.selectbox("Pilih User:", list(st.session_state["user_db"].keys()))
                     ps_input = st.text_input("Ganti Password", value=st.session_state["user_db"][un_input][0])
+                    # Diubah menjadi text_input agar bisa diedit bebas
+                    rl_input = st.text_input("Level Jabatan", value=st.session_state["user_db"][un_input][1])
                 
-                rl_input = st.selectbox("Level Jabatan", ["Staff", "Admin"])
                 st.write("Izin Akses:")
                 i_dash = st.checkbox("Dashboard", value=True)
                 i_input = st.checkbox("Input Data", value=True)
@@ -257,11 +238,13 @@ else:
                 i_um = st.checkbox("User Management", value=False)
                 
                 if st.form_submit_button("💾 SIMPAN PENGATURAN USER", use_container_width=True):
-                    perms = []
-                    if i_dash: perms.append("Dashboard")
-                    if i_input: perms.append("Input")
-                    if i_edit: perms.append("Edit")
-                    if i_um: perms.append("User Management")
-                    st.session_state["user_db"][un_input] = [ps_input, rl_input, perms]
-                    st.success("Konfigurasi User Disimpan!"); st.rerun()
+                    if un_input and rl_input:
+                        perms = []
+                        if i_dash: perms.append("Dashboard")
+                        if i_input: perms.append("Input")
+                        if i_edit: perms.append("Edit")
+                        if i_um: perms.append("User Management")
+                        st.session_state["user_db"][un_input] = [ps_input, rl_input, perms]
+                        st.success(f"User {un_input} ({rl_input}) Disimpan!"); st.rerun()
+                    else: st.error("Username dan Jabatan wajib diisi!")
             st.markdown("</div>", unsafe_allow_html=True)
