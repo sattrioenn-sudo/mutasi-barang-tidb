@@ -8,8 +8,8 @@ import pytz
 st.set_page_config(page_title="SATRIO POS PRO", page_icon="⚡", layout="wide")
 
 # Inisialisasi User & Permissions (Data Session)
+# Format: "username": ["password", "role", ["list_izin"]]
 if "user_db" not in st.session_state:
-    # Format: "username": ["password", "role", ["list_hak_akses"]]
     st.session_state["user_db"] = {
         "admin": ["admin123", "Admin", ["Dashboard", "Input", "Edit", "Hapus", "User Management"]],
         "staff1": ["staff123", "Staff", ["Dashboard", "Input"]]
@@ -57,13 +57,13 @@ if not st.session_state["logged_in"]:
                     st.session_state["logged_in"] = True
                     st.session_state["current_user"] = u
                     st.session_state["user_role"] = st.session_state["user_db"][u][1]
-                    st.session_state["user_perms"] = st.session_state["user_db"][u][2] # Ambil Hak Akses
+                    st.session_state["user_perms"] = st.session_state["user_db"][u][2]
                     st.rerun()
                 else: st.error("Akses Ditolak!")
 else:
     user_aktif = st.session_state["current_user"]
     role_aktif = st.session_state["user_role"]
-    hak_akses = st.session_state["user_perms"]
+    izin_user = st.session_state["user_perms"]
 
     # --- LOAD DATA ---
     try:
@@ -72,17 +72,16 @@ else:
         conn.close()
     except: df_raw = pd.DataFrame()
 
-    # --- SIDEBAR DYNAMIC MENU ---
+    # --- SIDEBAR DYNAMIC ---
     with st.sidebar:
         st.markdown(f"### ⚡ {user_aktif.upper()} ({role_aktif})")
         st.markdown("---")
         
-        # Logika Menu Berdasarkan Hak Akses
         nav_options = []
-        if "Dashboard" in hak_akses: nav_options.append("📊 Dashboard")
-        if "Input" in hak_akses: nav_options.append("➕ Input Barang")
-        if "Edit" in hak_akses or "Hapus" in hak_akses: nav_options.append("🔧 Edit/Hapus Data")
-        if "User Management" in hak_akses: nav_options.append("👥 Manajemen User")
+        if "Dashboard" in izin_user: nav_options.append("📊 Dashboard")
+        if "Input" in izin_user: nav_options.append("➕ Input Barang")
+        if "Edit" in izin_user or "Hapus" in izin_user: nav_options.append("🔧 Kontrol Transaksi")
+        if "User Management" in izin_user: nav_options.append("👥 Manajemen User")
         
         menu = st.selectbox("MENU NAVIGATION", nav_options)
         
@@ -131,22 +130,21 @@ else:
                 cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (full_val, jn, qt, now))
                 conn.commit(); conn.close(); st.success("Data Tersimpan!"); st.rerun()
 
-    elif menu == "🔧 Edit/Hapus Data":
+    elif menu == "🔧 Kontrol Transaksi":
         st.markdown("<h2 style='color:white;'>🔧 Transaction Control</h2>", unsafe_allow_html=True)
+        tabs_visible = []
+        if "Edit" in izin_user: tabs_visible.append("✏️ Edit")
+        if "Hapus" in izin_user: tabs_visible.append("🗑️ Hapus")
         
-        tabs = []
-        if "Edit" in hak_akses: tabs.append("Edit")
-        if "Hapus" in hak_akses: tabs.append("Hapus")
-        
-        if not tabs:
-            st.warning("Anda tidak memiliki izin khusus untuk mengedit atau menghapus.")
+        if not tabs_visible:
+            st.warning("Anda tidak memiliki izin khusus untuk Edit atau Hapus.")
         else:
-            t_list = st.tabs(tabs)
-            for i, t_name in enumerate(tabs):
-                with t_list[i]:
-                    if t_name == "Edit":
+            t_items = st.tabs(tabs_visible)
+            for i, tab_name in enumerate(tabs_visible):
+                with t_items[i]:
+                    if "Edit" in tab_name:
                         df_raw['sel'] = df_raw.apply(lambda x: f"ID:{x['id']} | {x['Item']}", axis=1)
-                        choice = st.selectbox("Pilih Data untuk Diedit", df_raw['sel'])
+                        choice = st.selectbox("Pilih Data", df_raw['sel'])
                         tid = int(choice.split('|')[0].replace('ID:','').strip())
                         row = df_raw[df_raw['id'] == tid].iloc[0]; p = parse_detail(row['nama_barang'])
                         with st.form("edit_form"):
@@ -156,59 +154,51 @@ else:
                                 upd_val = f"{p[0]} | {enm} | {p[2]} | {p[3]} | {user_aktif} | {p[5]}"
                                 conn = init_connection(); cur = conn.cursor()
                                 cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, tanggal=%s WHERE id=%s", (upd_val, eqt, now, tid))
-                                conn.commit(); conn.close(); st.success("Data Diupdate!"); st.rerun()
-                    
-                    if t_name == "Hapus":
+                                conn.commit(); conn.close(); st.success("Updated!"); st.rerun()
+                    else:
                         did = st.selectbox("ID Hapus", df_raw['id'])
                         if st.button("HAPUS PERMANEN", use_container_width=True):
                             conn = init_connection(); cur = conn.cursor(); cur.execute("DELETE FROM inventory WHERE id = %s", (int(did),))
                             conn.commit(); conn.close(); st.warning("Deleted!"); st.rerun()
 
     elif menu == "👥 Manajemen User":
-        st.markdown("<h2 style='color:white;'>👥 User & Permissions Management</h2>", unsafe_allow_html=True)
+        st.markdown("<h2 style='color:white;'>👥 User & Permission Management</h2>", unsafe_allow_html=True)
         
-        # TABEL USER DENGAN PERMISSIONS
+        # TABEL USER
         df_users = pd.DataFrame([
-            {"Username": k, "Password": v[0], "Role": v[1], "Hak Akses": ", ".join(v[2])} 
+            {"Username": k, "Password": v[0], "Role": v[1], "Izin": ", ".join(v[2])} 
             for k, v in st.session_state["user_db"].items()
         ])
         st.dataframe(df_users, use_container_width=True, hide_index=True)
         
         st.markdown("---")
-        col_add, col_del = st.columns(2)
-        with col_add:
-            st.markdown("### ➕ Konfigurasi User")
-            with st.form("user_config", clear_on_submit=False):
-                u_name = st.text_input("Username")
+        col_conf, col_del = st.columns(2)
+        with col_conf:
+            st.markdown("### ⚙️ Configure User Access")
+            with st.form("manage_user"):
+                u_name = st.text_input("Username (Baru/Lama)")
                 u_pass = st.text_input("Password")
                 u_role = st.selectbox("Role", ["Staff", "Admin"])
+                st.write("**Izin Fitur:**")
+                c1, c2, c3 = st.columns(3)
+                f_dash = c1.checkbox("Dashboard", True)
+                f_in = c2.checkbox("Input", True)
+                f_edit = c3.checkbox("Edit")
+                f_del = c1.checkbox("Hapus")
+                f_mgmt = c2.checkbox("User Management")
                 
-                st.write("**Berikan Izin Akses:**")
-                p_dash = st.checkbox("Dashboard", value=True)
-                p_input = st.checkbox("Input Transaksi", value=True)
-                p_edit = st.checkbox("Edit Transaksi")
-                p_hapus = st.checkbox("Hapus Transaksi")
-                p_mgmt = st.checkbox("Manajemen User")
-                
-                if st.form_submit_button("Simpan User", use_container_width=True):
-                    # Kumpulkan izin yang dipilih
-                    new_perms = []
-                    if p_dash: new_perms.append("Dashboard")
-                    if p_input: new_perms.append("Input")
-                    if p_edit: new_perms.append("Edit")
-                    if p_hapus: new_perms.append("Hapus")
-                    if p_mgmt: new_perms.append("User Management")
-                    
-                    st.session_state["user_db"][u_name] = [u_pass, u_role, new_perms]
-                    st.success(f"Konfigurasi {u_name} berhasil disimpan!")
-                    st.rerun()
+                if st.form_submit_button("SIMPAN HAK AKSES", use_container_width=True):
+                    perms = []
+                    if f_dash: perms.append("Dashboard")
+                    if f_in: perms.append("Input")
+                    if f_edit: perms.append("Edit")
+                    if f_del: perms.append("Hapus")
+                    if f_mgmt: perms.append("User Management")
+                    st.session_state["user_db"][u_name] = [u_pass, u_role, perms]
+                    st.success(f"Akses {u_name} diperbarui!"); st.rerun()
         
         with col_del:
             st.markdown("### ❌ Hapus Akses")
-            list_u = [u for u in st.session_state["user_db"].keys() if u != user_aktif]
-            target_del = st.selectbox("Pilih User untuk Dihapus", ["-"] + list_u)
-            if st.button("Hapus User Terpilih", use_container_width=True):
-                if target_del != "-":
-                    del st.session_state["user_db"][target_del]
-                    st.warning(f"User {target_del} telah dihapus!")
-                    st.rerun()
+            target = st.selectbox("Pilih User", ["-"] + [u for u in st.session_state["user_db"].keys() if u != user_aktif])
+            if st.button("HAPUS USER", use_container_width=True) and target != "-":
+                del st.session_state["user_db"][target]; st.rerun()
