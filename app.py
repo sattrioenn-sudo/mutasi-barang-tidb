@@ -9,6 +9,10 @@ import plotly.graph_objects as go
 # 1. Konfigurasi Halaman
 st.set_page_config(page_title="SATRIO POS PRO", page_icon="💎", layout="wide")
 
+# Inisialisasi History Login di Memori Aplikasi (Server-side session)
+if "global_login_tracker" not in st.session_state:
+    st.session_state["global_login_tracker"] = {}
+
 # Inisialisasi User & Permissions
 if "user_db" not in st.session_state:
     st.session_state["user_db"] = {
@@ -35,6 +39,13 @@ st.markdown("""
     @keyframes shimmer { to { background-position: 200% center; } }
     .stat-label { color: #94a3b8; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
     .stat-value { font-size: 1.8rem; font-weight: 800; color: #ffffff; margin-top: 5px; }
+    
+    /* Session Card Style */
+    .session-info {
+        background: rgba(56, 189, 248, 0.05);
+        border: 1px solid rgba(56, 189, 248, 0.2);
+        padding: 12px; border-radius: 12px; margin-bottom: 15px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -61,7 +72,23 @@ if not st.session_state["logged_in"]:
             p = st.text_input("Password", type="password")
             if st.form_submit_button("SYSTEM ENTRY"):
                 if u in st.session_state["user_db"] and str(p) == str(st.session_state["user_db"][u][0]):
-                    st.session_state.update({"logged_in": True, "current_user": u, "user_role": st.session_state["user_db"][u][1], "user_perms": st.session_state["user_db"][u][2]})
+                    tz = pytz.timezone('Asia/Jakarta')
+                    now_str = datetime.now(tz).strftime('%d/%m/%Y %H:%M')
+                    
+                    # Ambil data login terakhir SEBELUM diupdate
+                    last_seen = st.session_state["global_login_tracker"].get(u, "First Session")
+                    
+                    st.session_state.update({
+                        "logged_in": True, 
+                        "current_user": u, 
+                        "user_role": st.session_state["user_db"][u][1], 
+                        "user_perms": st.session_state["user_db"][u][2],
+                        "last_login_display": last_seen,
+                        "current_login_time": now_str
+                    })
+                    
+                    # Update history untuk login berikutnya
+                    st.session_state["global_login_tracker"][u] = now_str
                     st.rerun()
 else:
     user_aktif, izin_user = st.session_state["current_user"], st.session_state["user_perms"]
@@ -80,20 +107,32 @@ else:
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
-    # --- SIDEBAR ---
+    # --- SIDEBAR (Updated with Login Info) ---
     with st.sidebar:
         st.markdown(f"<h2 class='shimmer-text' style='font-size:1.5rem;'>{user_aktif.upper()}</h2>", unsafe_allow_html=True)
+        
+        # Info Session Box
+        st.markdown(f"""
+            <div class="session-info">
+                <div style="font-size:0.65rem; color:#94a3b8; font-weight:bold;">LAST LOGIN</div>
+                <div style="font-size:0.8rem; color:#f8fafc;">📅 {st.session_state.get('last_login_display')}</div>
+                <div style="margin-top:8px; font-size:0.65rem; color:#94a3b8; font-weight:bold;">CURRENT LOGIN</div>
+                <div style="font-size:0.8rem; color:#38bdf8;">🕒 {st.session_state.get('current_login_time')}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
         all_menus = {"📊 Dashboard": "Dashboard", "➕ Barang Masuk": "Masuk", "📤 Barang Keluar": "Keluar", "🔧 Kontrol Transaksi": "Edit", "👥 Manajemen User": "User Management"}
         nav_options = [m for m, p in all_menus.items() if p in izin_user]
         menu = st.selectbox("MENU NAVIGATION", nav_options)
-        if st.button("🚪 LOGOUT"):
-            st.session_state["logged_in"] = False; st.rerun()
+        
+        st.markdown("<br>"*5, unsafe_allow_html=True)
+        if st.button("🚪 LOGOUT", use_container_width=True):
+            st.session_state["logged_in"] = False
+            st.rerun()
 
-    # --- MENU: DASHBOARD (DETAIL UI) ---
+    # --- MENU: DASHBOARD ---
     if menu == "📊 Dashboard":
         st.markdown("<h1 class='shimmer-text'>Control Tower</h1>", unsafe_allow_html=True)
-        
-        # Filter Periode
         with st.container():
             c_filter1, c_filter2 = st.columns([2, 1])
             with c_filter2:
@@ -104,7 +143,6 @@ else:
             df_filt = df_raw.loc[mask]
             stok_summary = df_raw.groupby(['SKU', 'Item'])['adj'].sum().reset_index(name='Stock')
             
-            # --- ROW 1: KEY METRICS ---
             m1, m2, m3, m4 = st.columns(4)
             metrics = [
                 ("Inbound Flow", int(df_filt[df_filt['jenis_mutasi']=='Masuk']['jumlah'].sum()), "#38bdf8", m1),
@@ -119,12 +157,9 @@ else:
                         <div class='stat-value'>{val:,}</div>
                     </div>""", unsafe_allow_html=True)
 
-            # --- ROW 2: VISUAL ANALYTICS ---
             col_chart1, col_chart2 = st.columns([2, 1])
-            
             with col_chart1:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                # Trend Arus Barang
                 trend_df = df_filt.groupby([df_filt['tanggal'].dt.date, 'jenis_mutasi'])['jumlah'].sum().reset_index()
                 fig_trend = px.area(trend_df, x='tanggal', y='jumlah', color='jenis_mutasi',
                                     color_discrete_map={'Masuk':'#38bdf8', 'Keluar':'#f43f5e'},
@@ -136,7 +171,6 @@ else:
 
             with col_chart2:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                # Komposisi Mutasi
                 mutasi_counts = df_filt['jenis_mutasi'].value_counts()
                 fig_pie = px.pie(values=mutasi_counts.values, names=mutasi_counts.index, 
                                  hole=0.7, color_discrete_sequence=['#38bdf8', '#f43f5e'],
@@ -146,27 +180,19 @@ else:
                 st.plotly_chart(fig_pie, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
-            # --- ROW 3: DETAILED TABLES ---
             st.markdown("### 📋 Operational Logs")
             t_stok, t_in, t_out = st.tabs(["📦 Stock Status", "📥 Recent Inbound", "📤 Recent Outbound"])
-            
             with t_stok:
-                # Menambahkan Indicator Low Stock
                 stok_view = stok_summary.copy()
                 stok_view['Status'] = stok_view['Stock'].apply(lambda x: "🔴 Low Stock" if x < 10 else "🟢 Safe")
                 st.dataframe(stok_view.sort_values('Stock'), use_container_width=True, hide_index=True)
-            
             with t_in:
-                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Masuk'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], 
-                             use_container_width=True, hide_index=True)
-            
+                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Masuk'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
             with t_out:
-                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Keluar'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], 
-                             use_container_width=True, hide_index=True)
-
+                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Keluar'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
         else: st.info("Pilih rentang tanggal untuk melihat data.")
 
-    # --- MENU LAIN (FUNGSI TETAP SAMA) ---
+    # --- MENU: BARANG MASUK ---
     elif menu == "➕ Barang Masuk":
         st.markdown("<h1 class='shimmer-text'>Inbound Entry</h1>", unsafe_allow_html=True)
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -183,12 +209,12 @@ else:
                 conn.commit(); conn.close(); st.balloons(); st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # --- MENU: BARANG KELUAR ---
     elif menu == "📤 Barang Keluar":
         st.markdown("<h1 class='shimmer-text' style='background: linear-gradient(90deg, #f43f5e, #fb7185); -webkit-background-clip: text;'>Outbound System</h1>", unsafe_allow_html=True)
         if not df_raw.empty:
             stok_skrng = df_raw.groupby(['SKU', 'Item', 'Unit'])['adj'].sum().reset_index()
             stok_ready = stok_skrng[stok_skrng['adj'] > 0]
-            
             col_f, col_r = st.columns([1, 1.2])
             with col_f:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -210,7 +236,6 @@ else:
                         st.session_state['receipt'] = {"id": now.strftime('%y%m%d%H%M'), "item": nama_o, "qty": qty_o, "unit": unit_o, "to": tujuan, "time": now.strftime('%d/%m/%Y %H:%M'), "sku": sku_o}
                         st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
-            
             with col_r:
                 if 'receipt' in st.session_state:
                     r = st.session_state['receipt']
@@ -221,7 +246,9 @@ else:
                         <center><small>Admin: {user_aktif}</small></center>
                     </div>""", unsafe_allow_html=True)
                     if st.button("🗑️ Clear Struk"): del st.session_state['receipt']; st.rerun()
+        else: st.warning("Stok sedang kosong.")
 
+    # --- MENU: KONTROL ---
     elif menu == "🔧 Kontrol Transaksi":
         st.markdown("<h1 class='shimmer-text'>System Control</h1>", unsafe_allow_html=True)
         if not df_raw.empty:
@@ -237,3 +264,8 @@ else:
                     conn = init_connection(); cur = conn.cursor()
                     cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, jenis_mutasi=%s WHERE id=%s", (new_v, eqt, ejn, tid))
                     conn.commit(); conn.close(); st.success("Updated!"); st.rerun()
+
+    # --- MENU: USER MANAGEMENT ---
+    elif menu == "👥 Manajemen User":
+        st.markdown("<h1 class='shimmer-text'>User Control</h1>", unsafe_allow_html=True)
+        st.info("Fitur manajemen user tersedia untuk level Admin.")
