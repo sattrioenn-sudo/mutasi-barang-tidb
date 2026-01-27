@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # 1. Konfigurasi Halaman
-st.set_page_config(page_title="SATRIO POS PRO", page_icon="💎", layout="wide")
+st.set_page_config(page_title="APLICATION", page_icon="💎", layout="wide")
 
 # --- INISIALISASI SESSION STATE (NON-DATABASE) ---
 if "global_login_tracker" not in st.session_state:
