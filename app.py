@@ -7,7 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # 1. Konfigurasi Halaman
-st.set_page_config(page_title="SATRIO POS PRO", page_icon="💎", layout="wide")
+st.set_page_config(page_title="APLICATION", page_icon="💎", layout="wide")
 
 # --- INISIALISASI SESSION STATE (NON-DATABASE) ---
 if "global_login_tracker" not in st.session_state:
@@ -42,6 +42,8 @@ st.markdown("""
         animation: shimmer 3s linear infinite; font-weight: 800; font-size: 2.2rem;
     }
     @keyframes shimmer { to { background-position: 200% center; } }
+    .stat-label { color: #94a3b8; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+    .stat-value { font-size: 1.8rem; font-weight: 800; color: #ffffff; margin-top: 5px; }
     .session-info {
         background: rgba(56, 189, 248, 0.05);
         border: 1px solid rgba(56, 189, 248, 0.2);
@@ -54,17 +56,17 @@ st.markdown("""
 def init_connection():
     return mysql.connector.connect(**st.secrets["tidb"], ssl_verify_cert=False, use_pure=True)
 
+def parse_detail(val):
+    parts = [p.strip() for p in str(val).split('|')]
+    while len(parts) < 6: parts.append("-")
+    return parts
+
 def add_sec_log(user, action, detail):
     tz = pytz.timezone('Asia/Jakarta')
     now = datetime.now(tz).strftime('%d/%m/%Y %H:%M:%S')
     st.session_state["security_logs"].append({
         "Timestamp": now, "User": user, "Action": action, "Detail": detail
     })
-
-def parse_detail(val):
-    parts = [p.strip() for p in str(val).split('|')]
-    while len(parts) < 6: parts.append("-")
-    return parts
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -79,15 +81,15 @@ if not st.session_state["logged_in"]:
             u = st.text_input("Username")
             p = st.text_input("Password", type="password")
             if st.form_submit_button("SYSTEM ENTRY"):
-                # Cek Lock Status
+                # Security Check: Brute Force
                 if st.session_state["failed_attempts"].get(u, 0) >= 3:
-                    st.error("Akun Terkunci! Hubungi Admin Utama.")
-                    add_sec_log(u, "LOCKOUT", "Mencoba masuk pada akun yang sedang terkunci")
+                    st.error("AKUN TERKUNCI! Salah password 3x. Hubungi Admin.")
+                    add_sec_log(u, "LOCKOUT", "Mencoba login pada akun terkunci")
                 elif u in st.session_state["user_db"] and str(p) == str(st.session_state["user_db"][u][0]):
                     tz = pytz.timezone('Asia/Jakarta')
                     now_str = datetime.now(tz).strftime('%d/%m/%Y %H:%M')
-                    st.session_state["failed_attempts"][u] = 0 # Reset
-                    add_sec_log(u, "LOGIN SUCCESS", "User masuk ke dashboard")
+                    st.session_state["failed_attempts"][u] = 0 
+                    add_sec_log(u, "LOGIN SUCCESS", "Masuk ke sistem")
                     st.session_state.update({
                         "logged_in": True, "current_user": u, 
                         "user_role": st.session_state["user_db"][u][1], 
@@ -99,9 +101,8 @@ if not st.session_state["logged_in"]:
                     st.rerun()
                 else:
                     st.session_state["failed_attempts"][u] = st.session_state["failed_attempts"].get(u, 0) + 1
-                    left = 3 - st.session_state["failed_attempts"][u]
-                    st.error(f"Kredensial Salah! Sisa percobaan: {max(0, left)}")
-                    add_sec_log(u, "FAILED LOGIN", f"Percobaan login gagal. Sisa percobaan: {left}")
+                    st.error(f"Kredensial Salah! Sisa percobaan: {3 - st.session_state['failed_attempts'][u]}")
+                    add_sec_log(u, "FAILED LOGIN", f"Percobaan gagal ke-{st.session_state['failed_attempts'][u]}")
 else:
     user_aktif, izin_user = st.session_state["current_user"], st.session_state["user_perms"]
 
@@ -136,16 +137,16 @@ else:
         menu = st.selectbox("MENU NAVIGATION", nav_options)
         
         if st.button("🚪 LOGOUT", use_container_width=True):
-            add_sec_log(user_aktif, "LOGOUT", "User keluar dari sistem")
+            add_sec_log(user_aktif, "LOGOUT", "Keluar dari sistem")
             st.session_state["logged_in"] = False
             st.rerun()
 
     # --- MENU: DASHBOARD ---
     if menu == "📊 Dashboard":
         st.markdown("<h1 class='shimmer-text'>Control Tower</h1>", unsafe_allow_html=True)
-        # (Konten Dashboard tetap sama seperti kode Anda)
+        # (Isi dashboard sesuai kode Anda...)
 
-    # --- MENU: BARANG MASUK (With Log) ---
+    # --- MENU: BARANG MASUK ---
     elif menu == "➕ Barang Masuk":
         st.markdown("<h1 class='shimmer-text'>Inbound Entry</h1>", unsafe_allow_html=True)
         with st.form("input_in"):
@@ -159,10 +160,10 @@ else:
                 conn = init_connection(); cur = conn.cursor()
                 cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (val, "Masuk", qt, now))
                 conn.commit(); conn.close()
-                add_sec_log(user_aktif, "INVENTORY_IN", f"Menambah {nm} sebanyak {qt} {stn}")
+                add_sec_log(user_aktif, "ADD_ITEM", f"Input Masuk: {nm} ({qt} {stn})")
                 st.balloons(); st.rerun()
 
-    # --- MENU: KONTROL (With Log) ---
+    # --- MENU: KONTROL ---
     elif menu == "🔧 Kontrol Transaksi":
         st.markdown("<h1 class='shimmer-text'>System Control</h1>", unsafe_allow_html=True)
         if not df_raw.empty:
@@ -177,40 +178,35 @@ else:
                     conn = init_connection(); cur = conn.cursor()
                     cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s WHERE id=%s", (new_v, eqt, tid))
                     conn.commit(); conn.close()
-                    add_sec_log(user_aktif, "UPDATE_RECORD", f"Update ID {tid}: {enm} ({eqt})")
+                    add_sec_log(user_aktif, "EDIT_DATA", f"Ubah ID:{tid} menjadi {enm} ({eqt})")
                     st.success("Updated!"); st.rerun()
 
-    # --- MENU: USER MANAGEMENT (With Unlock Feature) ---
+    # --- MENU: USER MANAGEMENT (With Lock/Unlock) ---
     elif menu == "👥 Manajemen User":
         st.markdown("<h1 class='shimmer-text'>User Control</h1>", unsafe_allow_html=True)
-        c_list, c_add = st.columns([1.5, 1])
-        with c_list:
-            st.markdown("### 📋 User Status")
-            u_data = []
-            for k, v in st.session_state["user_db"].items():
-                status = "🔴 LOCKED" if st.session_state["failed_attempts"].get(k, 0) >= 3 else "🟢 ACTIVE"
-                u_data.append({"User": k, "Role": v[1], "Status": status, "Last Active": st.session_state["global_login_tracker"].get(k, "Never")})
-            st.dataframe(pd.DataFrame(u_data), use_container_width=True, hide_index=True)
-            
-            target_unlock = st.selectbox("Pilih User untuk Buka Kunci", [u for u, att in st.session_state["failed_attempts"].items() if att >= 3])
-            if st.button("🔓 BUKA KUNCI AKUN"):
-                st.session_state["failed_attempts"][target_unlock] = 0
-                add_sec_log(user_aktif, "UNLOCK_USER", f"Membuka kunci akun {target_unlock}")
-                st.success(f"Akun {target_unlock} aktif kembali!"); st.rerun()
-
-        with c_add:
-            # (Bagian Tambah User tetap sama seperti kode Anda)
-            st.info("Gunakan panel ini untuk mengelola hak akses.")
+        col1, col2 = st.columns([1.5, 1])
+        with col1:
+            st.markdown("### 📋 User Directory")
+            u_data = [{"User": k, "Role": v[1], "Status": "🔴 LOCKED" if st.session_state["failed_attempts"].get(k, 0) >= 3 else "🟢 ACTIVE"} for k, v in st.session_state["user_db"].items()]
+            st.dataframe(pd.DataFrame(u_data), use_container_width=True)
+        with col2:
+            st.markdown("### 🔓 Security Reset")
+            locked_users = [u for u, att in st.session_state["failed_attempts"].items() if att >= 3]
+            target = st.selectbox("Unlock User", locked_users if locked_users else ["No Locked User"])
+            if st.button("OPEN ACCESS") and target != "No Locked User":
+                st.session_state["failed_attempts"][target] = 0
+                add_sec_log(user_aktif, "UNLOCK_USER", f"Membuka kunci akun {target}")
+                st.rerun()
 
     # --- MENU: SECURITY ---
     elif menu == "🛡️ Security Logs":
         st.markdown("<h1 class='shimmer-text'>Security Audit</h1>", unsafe_allow_html=True)
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
         if st.session_state["security_logs"]:
-            st.dataframe(pd.DataFrame(st.session_state["security_logs"]).iloc[::-1], use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(st.session_state["security_logs"]).iloc[::-1], use_container_width=True)
         else:
             st.info("Belum ada log.")
-        if st.button("🗑️ Reset Log"):
+        if st.button("🗑️ Reset Log (Session Only)"):
             st.session_state["security_logs"] = []
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
