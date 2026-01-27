@@ -1,18 +1,17 @@
 import streamlit as st
 import mysql.connector
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 import plotly.express as px
-import plotly.graph_objects as go
 
-# 1. Konfigurasi Halaman & UI Premium
+# 1. Konfigurasi Halaman
 st.set_page_config(page_title="SATRIO POS PRO", page_icon="💎", layout="wide")
 
 # Inisialisasi User & Permissions
 if "user_db" not in st.session_state:
     st.session_state["user_db"] = {
-        "admin": ["kcs_2026", "Admin", ["Dashboard", "Input", "Edit", "User Management"]]
+        "admin": ["kcs_2026", "Admin", ["Dashboard", "Masuk", "Keluar", "Edit", "User Management"]]
     }
 
 # --- CSS QUANTUM DASHBOARD DESIGN ---
@@ -20,47 +19,24 @@ st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap');
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
-    
-    .stApp {
-        background: radial-gradient(circle at top right, #1e1b4b, #0f172a, #020617);
-        color: #f8fafc;
-    }
-
-    /* Card Aesthetic */
+    .stApp { background: radial-gradient(circle at top right, #1e1b4b, #0f172a, #020617); color: #f8fafc; }
     .glass-card {
         background: rgba(255, 255, 255, 0.03);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        padding: 1.5rem;
-        border-radius: 24px;
-        backdrop-filter: blur(15px);
-        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        margin-bottom: 20px;
+        padding: 1.5rem; border-radius: 24px;
+        backdrop-filter: blur(15px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 20px;
     }
-
-    /* Shimmer Effect for Title */
     .shimmer-text {
         background: linear-gradient(90deg, #38bdf8, #818cf8, #c084fc, #38bdf8);
-        background-size: 200% auto;
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        animation: shimmer 3s linear infinite;
-        font-weight: 800;
-        font-size: 2.5rem;
+        background-size: 200% auto; -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        animation: shimmer 3s linear infinite; font-weight: 800; font-size: 2.5rem;
     }
     @keyframes shimmer { to { background-position: 200% center; } }
-
-    /* Metric Box */
-    .metric-box {
-        text-align: center;
-        padding: 1rem;
-        border-radius: 18px;
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
+    .metric-box { text-align: center; padding: 1rem; border-radius: 18px; background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.05); }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Fungsi Core (Koneksi & Parsing)
+# 2. Fungsi Core
 def init_connection():
     return mysql.connector.connect(**st.secrets["tidb"], ssl_verify_cert=False, use_pure=True)
 
@@ -74,7 +50,6 @@ if "logged_in" not in st.session_state:
 
 # --- LOGIC AUTH ---
 if not st.session_state["logged_in"]:
-    # (Form login tetap sama seperti sebelumnya agar aman)
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1, 1])
     with col2:
@@ -103,152 +78,160 @@ else:
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
-    # --- SIDEBAR ---
+    # --- SIDEBAR NAVIGATION ---
     with st.sidebar:
         st.markdown(f"<h2 class='shimmer-text' style='font-size:1.5rem;'>{user_aktif.upper()}</h2>", unsafe_allow_html=True)
-        nav_options = [opt for opt, perm in zip(["📊 Dashboard", "➕ Input Barang", "🔧 Kontrol Transaksi", "👥 Manajemen User"], ["Dashboard", "Input", "Edit", "User Management"]) if perm in izin_user]
+        
+        # Mapping menu dengan izin
+        all_menus = {
+            "📊 Dashboard": "Dashboard",
+            "➕ Barang Masuk": "Masuk",
+            "📤 Barang Keluar": "Keluar",
+            "🔧 Kontrol Transaksi": "Edit",
+            "👥 Manajemen User": "User Management"
+        }
+        nav_options = [m for m, p in all_menus.items() if p in izin_user]
         menu = st.selectbox("MENU NAVIGATION", nav_options)
+        
         if st.button("🚪 LOGOUT"):
             st.session_state["logged_in"] = False; st.rerun()
 
-    # --- MENU: DASHBOARD (DETAIL & KEREN) ---
+    # --- MENU: DASHBOARD ---
     if menu == "📊 Dashboard":
         st.markdown("<h1 class='shimmer-text'>Operational Intelligence</h1>", unsafe_allow_html=True)
-        
         if not df_raw.empty:
-            # Row 1: Key Metrics
-            stok_summary = df_raw.groupby(['Item'])['adj'].sum().reset_index(name='Stock')
-            tot_in = int(df_raw[df_raw['jenis_mutasi']=='Masuk']['jumlah'].sum())
-            tot_out = int(df_raw[df_raw['jenis_mutasi']=='Keluar']['jumlah'].sum())
-            
+            stok_summary = df_raw.groupby(['SKU', 'Item'])['adj'].sum().reset_index(name='Stock')
             m1, m2, m3, m4 = st.columns(4)
-            with m1: st.markdown(f"<div class='glass-card metric-box'><small style='color:#38bdf8'>INFLOW</small><h2>{tot_in}</h2></div>", unsafe_allow_html=True)
-            with m2: st.markdown(f"<div class='glass-card metric-box'><small style='color:#f43f5e'>OUTFLOW</small><h2>{tot_out}</h2></div>", unsafe_allow_html=True)
+            with m1: st.markdown(f"<div class='glass-card metric-box'><small style='color:#38bdf8'>INFLOW</small><h2>{int(df_raw[df_raw['jenis_mutasi']=='Masuk']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
+            with m2: st.markdown(f"<div class='glass-card metric-box'><small style='color:#f43f5e'>OUTFLOW</small><h2>{int(df_raw[df_raw['jenis_mutasi']=='Keluar']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
             with m3: st.markdown(f"<div class='glass-card metric-box'><small style='color:#10b981'>TOTAL SKU</small><h2>{len(stok_summary)}</h2></div>", unsafe_allow_html=True)
             with m4: st.markdown(f"<div class='glass-card metric-box' style='border-color:#fbbf24'><small style='color:#fbbf24'>BALANCE</small><h2>{int(stok_summary['Stock'].sum())}</h2></div>", unsafe_allow_html=True)
-
-            # Row 2: Charts (Diagram)
+            
             c1, c2 = st.columns([1.5, 1])
             with c1:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                # Area Chart Trend
-                fig_line = px.area(df_raw.sort_values('tanggal'), x='tanggal', y='jumlah', color='jenis_mutasi',
-                                  color_discrete_map={'Masuk':'#0ea5e9', 'Keluar':'#f43f5e'},
-                                  title="Stock Flow Over Time", template="plotly_dark")
-                fig_line.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                fig_line = px.area(df_raw.sort_values('tanggal'), x='tanggal', y='jumlah', color='jenis_mutasi', color_discrete_map={'Masuk':'#0ea5e9', 'Keluar':'#f43f5e'}, title="Stock Flow Over Time", template="plotly_dark")
                 st.plotly_chart(fig_line, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
-            
             with c2:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                # Donut Chart Stock Composition
-                fig_pie = px.pie(stok_summary[stok_summary['Stock']>0], values='Stock', names='Item', hole=0.5,
-                                title="Inventory Distribution", template="plotly_dark")
-                fig_pie.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
+                fig_pie = px.pie(stok_summary[stok_summary['Stock']>0], values='Stock', names='Item', hole=0.5, title="Inventory Distribution", template="plotly_dark")
                 st.plotly_chart(fig_pie, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
+        else: st.info("No data available.")
 
-            # Row 3: Bar Comparison & Table
-            c3, c4 = st.columns([1, 1.5])
-            with c3:
-                st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                # Bar Chart Comparison
-                df_bar = df_raw.groupby('jenis_mutasi')['jumlah'].sum().reset_index()
-                fig_bar = px.bar(df_bar, x='jenis_mutasi', y='jumlah', color='jenis_mutasi',
-                                color_discrete_map={'Masuk':'#10b981', 'Keluar':'#f43f5e'},
-                                title="Volume Comparison", template="plotly_dark")
-                fig_bar.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-                st.plotly_chart(fig_bar, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-            
-            with c4:
-                st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                st.markdown("#### 📜 Recent Transactions")
-                st.dataframe(df_raw[['SKU', 'Item', 'jenis_mutasi', 'jumlah', 'tanggal', 'Note']].head(10), use_container_width=True, hide_index=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-        else:
-            st.info("No data available to visualize.")
-
-    # --- MENU: INPUT (Tetap Lengkap) ---
-    elif menu == "➕ Input Barang":
-        st.markdown("<h1 class='shimmer-text'>Push Data</h1>", unsafe_allow_html=True)
+    # --- MENU: BARANG MASUK ---
+    elif menu == "➕ Barang Masuk":
+        st.markdown("<h1 class='shimmer-text'>Inbound Entry</h1>", unsafe_allow_html=True)
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-        with st.form("input_f"):
+        with st.form("input_in"):
             c1, c2 = st.columns(2)
             sk = c1.text_input("SKU Code")
             nm = c1.text_input("Item Name")
             stn = c1.selectbox("Unit", ["Pcs", "Box", "Kg", "Unit"])
-            jn = c2.selectbox("Mutation", ["Masuk", "Keluar"])
-            qt = c2.number_input("Qty", min_value=1)
-            ke = c2.text_area("Note")
-            if st.form_submit_button("SAVE TO DATABASE"):
+            qt = c2.number_input("Qty Masuk", min_value=1)
+            ke = c2.text_area("Catatan")
+            if st.form_submit_button("SAVE INBOUND"):
                 tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz).strftime('%Y-%m-%d %H:%M:%S')
                 val = f"{sk} | {nm} | {stn} | {user_aktif} | - | {ke}"
                 conn = init_connection(); cur = conn.cursor()
-                cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (val, jn, qt, now))
+                cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (val, "Masuk", qt, now))
                 conn.commit(); conn.close(); st.balloons(); st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- MENU: KONTROL (LENGKAP: EDIT NAMA, QTY, KET, DLL) ---
+    # --- MENU: BARANG KELUAR (NEW LOGIC) ---
+    elif menu == "📤 Barang Keluar":
+        st.markdown("<h1 class='shimmer-text' style='background: linear-gradient(90deg, #f43f5e, #fb7185); -webkit-background-clip: text;'>Outbound System</h1>", unsafe_allow_html=True)
+        if not df_raw.empty:
+            stok_skrng = df_raw.groupby(['SKU', 'Item', 'Unit'])['adj'].sum().reset_index()
+            stok_ready = stok_skrng[stok_skrng['adj'] > 0]
+            
+            col_f, col_r = st.columns([1.2, 1])
+            with col_f:
+                st.markdown("<div class='glass-card' style='border-color: rgba(244,63,94,0.3)'>", unsafe_allow_html=True)
+                with st.form("out_f"):
+                    choice = st.selectbox("Pilih Barang", stok_ready.apply(lambda x: f"{x['SKU']} | {x['Item']} (Sisa: {int(x['adj'])} {x['Unit']})", axis=1))
+                    sku_o = choice.split('|')[0].strip()
+                    nama_o = choice.split('|')[1].split('(')[0].strip()
+                    unit_o = stok_ready[stok_ready['SKU']==sku_o]['Unit'].iloc[0]
+                    stok_m = int(stok_ready[stok_ready['SKU']==sku_o]['adj'].iloc[0])
+                    
+                    c1, c2 = st.columns(2)
+                    qty_o = c1.number_input("Qty Keluar", min_value=1, max_value=stok_m)
+                    tujuan = c2.text_input("Tujuan")
+                    note_o = st.text_area("Alasan Keluar")
+                    
+                    if st.form_submit_button("🔥 KONFIRMASI KELUAR"):
+                        tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz)
+                        val = f"{sku_o} | {nama_o} | {unit_o} | {user_aktif} | - | TO: {tujuan} - {note_o}"
+                        conn = init_connection(); cur = conn.cursor()
+                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (val, "Keluar", qty_o, now.strftime('%Y-%m-%d %H:%M:%S')))
+                        conn.commit(); conn.close()
+                        st.session_state['receipt'] = {"id": now.strftime('%H%M%S'), "item": nama_o, "qty": qty_o, "unit": unit_o, "to": tujuan, "time": now.strftime('%H:%M')}
+                        st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+            
+            with col_r:
+                if 'receipt' in st.session_state:
+                    r = st.session_state['receipt']
+                    st.markdown(f"""
+                        <div style="background: white; color: #1e293b; padding: 20px; border-radius: 15px; border-left: 8px solid #f43f5e; box-shadow: 0 10px 20px rgba(0,0,0,0.3);">
+                            <h3 style="margin:0; color:#0f172a; text-align:center;">SURAT JALAN</h3>
+                            <hr>
+                            <p><b>Ref:</b> SJ-{r['id']}<br><b>Item:</b> {r['item']}<br>
+                            <b>Qty:</b> <span style="color:red; font-weight:bold;">{r['qty']} {r['unit']}</span><br>
+                            <b>Tujuan:</b> {r['to']}<br><b>Waktu:</b> {r['time']}</p>
+                            <small>Petugas: {user_aktif}</small>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    if st.button("Hapus Struk"): del st.session_state['receipt']; st.rerun()
+        else: st.warning("Stok kosong.")
+
+    # --- MENU: KONTROL ---
     elif menu == "🔧 Kontrol Transaksi":
         st.markdown("<h1 class='shimmer-text'>System Control</h1>", unsafe_allow_html=True)
         t1, t2 = st.tabs(["✏️ Edit Data", "🗑️ Hapus"])
         with t1:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
             if not df_raw.empty:
-                choice = st.selectbox("Pilih Record", df_raw.apply(lambda x: f"ID:{x['id']} | {x['Item']}", axis=1))
+                choice = st.selectbox("Pilih ID", df_raw.apply(lambda x: f"ID:{x['id']} | {x['Item']} ({x['jenis_mutasi']})", axis=1))
                 tid = int(choice.split('|')[0].replace('ID:','').strip())
                 row = df_raw[df_raw['id'] == tid].iloc[0]
                 p = parse_detail(row['nama_barang'])
                 with st.form("edit_f"):
                     c1, c2 = st.columns(2)
                     enm = c1.text_input("Item Name", value=p[1])
-                    eqt = c1.number_input("Quantity", value=int(row['jumlah']))
+                    eqt = c1.number_input("Qty", value=int(row['jumlah']))
                     ejn = c2.selectbox("Mutation", ["Masuk", "Keluar"], index=0 if row['jenis_mutasi']=="Masuk" else 1)
-                    eke = c2.text_area("Keterangan", value=p[5])
-                    if st.form_submit_button("🔥 UPDATE"):
-                        new_val = f"{p[0]} | {enm} | {p[2]} | {p[3]} | {user_aktif} | {eke}"
+                    eke = c2.text_area("Note", value=p[5])
+                    if st.form_submit_button("UPDATE DATA"):
+                        new_v = f"{p[0]} | {enm} | {p[2]} | {p[3]} | {user_aktif} | {eke}"
                         conn = init_connection(); cur = conn.cursor()
-                        cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, jenis_mutasi=%s WHERE id=%s", (new_val, eqt, ejn, tid))
+                        cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, jenis_mutasi=%s WHERE id=%s", (new_v, eqt, ejn, tid))
                         conn.commit(); conn.close(); st.success("Updated!"); st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
         with t2:
-            st.markdown("<div class='glass-card' style='border-color:#f43f5e'>", unsafe_allow_html=True)
-            did = st.selectbox("ID to Delete", df_raw['id'] if not df_raw.empty else [])
+            did = st.selectbox("Hapus ID", df_raw['id'] if not df_raw.empty else [])
             if st.button("🚨 DELETE PERMANENT"):
                 conn = init_connection(); cur = conn.cursor(); cur.execute("DELETE FROM inventory WHERE id=%s", (int(did),))
                 conn.commit(); conn.close(); st.warning("Deleted!"); st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- MENU: USER MANAGEMENT (LENGKAP) ---
+    # --- MENU: USER MANAGEMENT ---
     elif menu == "👥 Manajemen User":
         st.markdown("<h1 class='shimmer-text'>User Control</h1>", unsafe_allow_html=True)
         cl, cf = st.columns([1.5, 1])
         with cl:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
             u_data = [{"User": k, "Role": v[1], "Akses": "•".join(v[2])} for k, v in st.session_state["user_db"].items()]
             st.dataframe(pd.DataFrame(u_data), use_container_width=True, hide_index=True)
-            st.markdown("</div>", unsafe_allow_html=True)
         with cf:
-            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
             mode = st.radio("Aksi", ["Tambah", "Edit/Hapus"], horizontal=True)
             with st.form("user_m"):
-                if mode == "Tambah":
-                    un, ps, rl = st.text_input("Username"), st.text_input("Password", type="password"), st.text_input("Role")
-                else:
-                    un = st.selectbox("Pilih User", [u for u in st.session_state["user_db"].keys() if u != 'admin'])
-                    ps = st.text_input("Password", value=st.session_state["user_db"][un][0] if un else "")
-                    rl = st.text_input("Role", value=st.session_state["user_db"][un][1] if un else "")
-                
+                un = st.text_input("Username") if mode == "Tambah" else st.selectbox("Pilih User", [u for u in st.session_state["user_db"].keys() if u != 'admin'])
+                ps = st.text_input("Password", type="password")
+                rl = st.text_input("Role")
                 p_dash = st.checkbox("Dashboard", value=True)
-                p_in = st.checkbox("Input", value=True)
+                p_in = st.checkbox("Masuk", value=True)
+                p_out = st.checkbox("Keluar", value=True)
                 p_ed = st.checkbox("Edit", value=False)
                 p_um = st.checkbox("User Management", value=False)
-
-                b_save, b_del = st.columns([2, 1])
-                if b_save.form_submit_button("SIMPAN"):
-                    perms = [p for p, v in zip(["Dashboard", "Input", "Edit", "User Management"], [p_dash, p_in, p_ed, p_um]) if v]
+                if st.form_submit_button("SIMPAN"):
+                    perms = [p for p, v in zip(["Dashboard", "Masuk", "Keluar", "Edit", "User Management"], [p_dash, p_in, p_out, p_ed, p_um]) if v]
                     st.session_state["user_db"][un] = [ps, rl, perms]; st.rerun()
-                if mode == "Edit/Hapus" and b_del.form_submit_button("🗑️"):
-                    del st.session_state["user_db"][un]; st.rerun()
-            st.markdown("</div>", unsafe_allow_html=True)
