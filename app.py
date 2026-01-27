@@ -1,20 +1,3 @@
-DB_HOST = "gateway01.ap-southeast-1.prod.aws.tidbcloud.com"
-DB_PORT = 4000
-DB_USER = "3vaJYJi3nKZfzGN.root"
-DB_PASSWORD = "jRZLpUyEBHh1KvF6"
-DB_NAME = "logistik_db"
-TOML SECRETS :
-[tidb]
-host = "gateway01.ap-northeast-1.prod.aws.tidbcloud.com"
-port = 4000
-user = "oL5iaMyqhc68BtM.root"
-password = "jKHKvea3PaCxfm9S"
-database = "test"
-[auth_users]
-admin = "kcs_2026"
-budi = "456"
-
-app.py :
 import streamlit as st
 import mysql.connector
 import pandas as pd
