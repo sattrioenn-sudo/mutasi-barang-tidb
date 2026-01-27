@@ -3,7 +3,6 @@ DB_PORT = 4000
 DB_USER = "3vaJYJi3nKZfzGN.root"
 DB_PASSWORD = "jRZLpUyEBHh1KvF6"
 DB_NAME = "logistik_db"
-
 TOML SECRETS :
 [tidb]
 host = "gateway01.ap-northeast-1.prod.aws.tidbcloud.com"
