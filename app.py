@@ -108,8 +108,8 @@ else:
             stok_summary = df_raw.groupby(['SKU', 'Item'])['adj'].sum().reset_index(name='Stock')
             
             m1, m2, m3, m4 = st.columns(4)
-            with m1: st.markdown(f"<div class='glass-card metric-box'><small style='color:#38bdf8'>INFLOW (PERIOD)</small><h2>{int(df_filt[df_filt['jenis_mutasi']=='Masuk']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
-            with m2: st.markdown(f"<div class='glass-card metric-box'><small style='color:#f43f5e'>OUTFLOW (PERIOD)</small><h2>{int(df_filt[df_filt['jenis_mutasi']=='Keluar']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
+            with m1: st.markdown(f"<div class='glass-card metric-box'><small style='color:#38bdf8'>INFLOW</small><h2>{int(df_filt[df_filt['jenis_mutasi']=='Masuk']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
+            with m2: st.markdown(f"<div class='glass-card metric-box'><small style='color:#f43f5e'>OUTFLOW</small><h2>{int(df_filt[df_filt['jenis_mutasi']=='Keluar']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
             with m3: st.markdown(f"<div class='glass-card metric-box'><small style='color:#10b981'>ACTIVE SKU</small><h2>{len(stok_summary[stok_summary['Stock']>0])}</h2></div>", unsafe_allow_html=True)
             with m4: st.markdown(f"<div class='glass-card metric-box' style='border-color:#fbbf24'><small style='color:#fbbf24'>BALANCE</small><h2>{int(stok_summary['Stock'].sum())}</h2></div>", unsafe_allow_html=True)
             
@@ -118,8 +118,9 @@ else:
             with t_in: st.dataframe(df_filt[df_filt['jenis_mutasi']=='Masuk'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
             with t_out: st.dataframe(df_filt[df_filt['jenis_mutasi']=='Keluar'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
             with t_stok: st.dataframe(stok_summary[stok_summary['Stock'] > 0], use_container_width=True, hide_index=True)
+        else: st.info("Pilih rentang tanggal yang valid.")
 
-    # --- MENU: BARANG KELUAR (NEW PREMIUM RECEIPT) ---
+    # --- MENU: BARANG KELUAR ---
     elif menu == "📤 Barang Keluar":
         st.markdown("<h1 class='shimmer-text' style='background: linear-gradient(90deg, #f43f5e, #fb7185); -webkit-background-clip: text;'>Outbound System</h1>", unsafe_allow_html=True)
         if not df_raw.empty:
@@ -136,8 +137,8 @@ else:
                     unit_o = stok_ready[stok_ready['SKU']==sku_o]['Unit'].iloc[0]
                     stok_m = int(stok_ready[stok_ready['SKU']==sku_o]['adj'].iloc[0])
                     qty_o = st.number_input("Qty Keluar", min_value=1, max_value=stok_m)
-                    tujuan = st.text_input("Penerima / Tujuan")
-                    note_o = st.text_area("Alasan Keluar")
+                    tujuan = st.text_input("Tujuan")
+                    note_o = st.text_area("Catatan")
                     if st.form_submit_button("🔥 KONFIRMASI KELUAR"):
                         tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz)
                         val = f"{sku_o} | {nama_o} | {unit_o} | {user_aktif} | - | TO: {tujuan} - {note_o}"
@@ -155,33 +156,30 @@ else:
                         <div class="receipt-container">
                             <div style="text-align: center; margin-bottom: 20px;">
                                 <h2 style="margin: 0; color: #0f172a; letter-spacing: 2px;">SATRIO POS PRO</h2>
-                                <p style="margin: 0; font-size: 0.8rem; color: #64748b;">OFFICIAL DELIVERY RECEIPT</p>
+                                <p style="margin: 0; font-size: 0.8rem; color: #64748b;">DIGITAL DELIVERY RECEIPT</p>
                                 <div style="border-bottom: 2px solid #e2e8f0; margin: 15px 0;"></div>
                             </div>
                             <div style="font-size: 0.9rem; line-height: 1.6;">
-                                <div style="display: flex; justify-content: space-between;"><span><b>REF NO:</b></span><span>SJ-{r['id']}</span></div>
-                                <div style="display: flex; justify-content: space-between;"><span><b>DATE:</b></span><span>{r['time']}</span></div>
-                                <div style="display: flex; justify-content: space-between; margin-bottom: 15px;"><span><b>PIC:</b></span><span>{user_aktif.upper()}</span></div>
-                                <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px dashed #cbd5e1; margin-bottom: 15px;">
-                                    <small style="color: #64748b;">ITEM DETAILS:</small>
-                                    <div style="font-weight: bold; font-size: 1.1rem; margin-top: 5px;">[{r['sku']}] {r['item']}</div>
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
-                                        <span style="font-size: 1.3rem; font-weight: 800; color: #f43f5e;">{r['qty']} {r['unit']}</span>
-                                        <span style="background: #fee2e2; color: #f43f5e; padding: 2px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: bold;">RELEASED</span>
+                                <div style="display: flex; justify-content: space-between;"><span><b>REF:</b></span><span>SJ-{r.get('id','-')}</span></div>
+                                <div style="display: flex; justify-content: space-between;"><span><b>DATE:</b></span><span>{r.get('time','-')}</span></div>
+                                <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px dashed #cbd5e1; margin: 15px 0;">
+                                    <div style="font-weight: bold; font-size: 1.1rem;">[{r.get('sku','N/A')}] {r.get('item','-')}</div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                                        <span style="font-size: 1.3rem; font-weight: 800; color: #f43f5e;">{r.get('qty',0)} {r.get('unit','')}</span>
+                                        <span style="background: #fee2e2; color: #f43f5e; padding: 2px 10px; border-radius: 20px; font-size: 0.65rem; font-weight: bold;">KELUAR</span>
                                     </div>
                                 </div>
-                                <p style="margin: 0; font-size: 0.75rem; color: #64748b;">DESTINATION:</p>
-                                <p style="margin: 0; font-weight: bold;">📍 {r['to']}</p>
+                                <p style="margin: 0;"><b>PENERIMA:</b> {r.get('to','-')}</p>
                             </div>
                             <div style="text-align: center; border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 20px; font-size: 0.7rem; color: #94a3b8;">
-                                Verified by Quantum System • {datetime.now().year} Satrio POS
+                                {datetime.now().year} © Satrio POS System
                             </div>
                         </div>
                     """, unsafe_allow_html=True)
-                    if st.button("🗑️ Clear Receipt", use_container_width=True): del st.session_state['receipt']; st.rerun()
-        else: st.warning("Stok kosong.")
+                    if st.button("🗑️ Hapus Struk"): del st.session_state['receipt']; st.rerun()
+        else: st.warning("Stok sedang kosong.")
 
-    # --- MENU LAIN (SAMA SEPERTI SEBELUMNYA) ---
+    # --- MENU LAIN ---
     elif menu == "➕ Barang Masuk":
         st.markdown("<h1 class='shimmer-text'>Inbound Entry</h1>", unsafe_allow_html=True)
         st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
@@ -208,10 +206,9 @@ else:
                 row = df_raw[df_raw['id'] == tid].iloc[0]
                 p = parse_detail(row['nama_barang'])
                 with st.form("edit_f"):
-                    c1, c2 = st.columns(2)
-                    enm, eqt = c1.text_input("Item Name", value=p[1]), c1.number_input("Qty", value=int(row['jumlah']))
-                    ejn = c2.selectbox("Mutation", ["Masuk", "Keluar"], index=0 if row['jenis_mutasi']=="Masuk" else 1)
-                    eke = c2.text_area("Note", value=p[5])
+                    enm, eqt = st.text_input("Item Name", value=p[1]), st.number_input("Qty", value=int(row['jumlah']))
+                    ejn = st.selectbox("Mutation", ["Masuk", "Keluar"], index=0 if row['jenis_mutasi']=="Masuk" else 1)
+                    eke = st.text_area("Note", value=p[5])
                     if st.form_submit_button("UPDATE DATA"):
                         new_v = f"{p[0]} | {enm} | {p[2]} | {p[3]} | {user_aktif} | {eke}"
                         conn = init_connection(); cur = conn.cursor()
