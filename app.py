@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 # 1. Konfigurasi Halaman
 st.set_page_config(page_title="SATRIO POS PRO", page_icon="💎", layout="wide")
 
-# Inisialisasi History Login di Memori Aplikasi (Server-side session)
+# Inisialisasi History Login di Memori Aplikasi
 if "global_login_tracker" not in st.session_state:
     st.session_state["global_login_tracker"] = {}
 
@@ -19,7 +19,7 @@ if "user_db" not in st.session_state:
         "admin": ["kcs_2026", "Admin", ["Dashboard", "Masuk", "Keluar", "Edit", "User Management"]]
     }
 
-# --- CSS QUANTUM DASHBOARD DESIGN REVISED ---
+# --- CSS QUANTUM DASHBOARD DESIGN ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap');
@@ -40,7 +40,6 @@ st.markdown("""
     .stat-label { color: #94a3b8; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
     .stat-value { font-size: 1.8rem; font-weight: 800; color: #ffffff; margin-top: 5px; }
     
-    /* Session Card Style */
     .session-info {
         background: rgba(56, 189, 248, 0.05);
         border: 1px solid rgba(56, 189, 248, 0.2);
@@ -75,7 +74,6 @@ if not st.session_state["logged_in"]:
                     tz = pytz.timezone('Asia/Jakarta')
                     now_str = datetime.now(tz).strftime('%d/%m/%Y %H:%M')
                     
-                    # Ambil data login terakhir SEBELUM diupdate
                     last_seen = st.session_state["global_login_tracker"].get(u, "First Session")
                     
                     st.session_state.update({
@@ -87,9 +85,10 @@ if not st.session_state["logged_in"]:
                         "current_login_time": now_str
                     })
                     
-                    # Update history untuk login berikutnya
                     st.session_state["global_login_tracker"][u] = now_str
                     st.rerun()
+                else:
+                    st.error("Invalid Credentials")
 else:
     user_aktif, izin_user = st.session_state["current_user"], st.session_state["user_perms"]
 
@@ -107,11 +106,10 @@ else:
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
-    # --- SIDEBAR (Updated with Login Info) ---
+    # --- SIDEBAR ---
     with st.sidebar:
         st.markdown(f"<h2 class='shimmer-text' style='font-size:1.5rem;'>{user_aktif.upper()}</h2>", unsafe_allow_html=True)
         
-        # Info Session Box
         st.markdown(f"""
             <div class="session-info">
                 <div style="font-size:0.65rem; color:#94a3b8; font-weight:bold;">LAST LOGIN</div>
@@ -134,7 +132,7 @@ else:
     if menu == "📊 Dashboard":
         st.markdown("<h1 class='shimmer-text'>Control Tower</h1>", unsafe_allow_html=True)
         with st.container():
-            c_filter1, c_filter2 = st.columns([2, 1])
+            _, c_filter2 = st.columns([2, 1])
             with c_filter2:
                 d_range = st.date_input("Periode Analisis", [date.today().replace(day=1), date.today()])
 
@@ -163,34 +161,18 @@ else:
                 trend_df = df_filt.groupby([df_filt['tanggal'].dt.date, 'jenis_mutasi'])['jumlah'].sum().reset_index()
                 fig_trend = px.area(trend_df, x='tanggal', y='jumlah', color='jenis_mutasi',
                                     color_discrete_map={'Masuk':'#38bdf8', 'Keluar':'#f43f5e'},
-                                    title="Activity Trend (In vs Out)", template="plotly_dark",
-                                    line_shape="spline")
-                fig_trend.update_layout(height=350, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+                                    title="Activity Trend", template="plotly_dark")
                 st.plotly_chart(fig_trend, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with col_chart2:
                 st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
                 mutasi_counts = df_filt['jenis_mutasi'].value_counts()
-                fig_pie = px.pie(values=mutasi_counts.values, names=mutasi_counts.index, 
-                                 hole=0.7, color_discrete_sequence=['#38bdf8', '#f43f5e'],
-                                 title="Activity Mix")
-                fig_pie.update_layout(height=350, showlegend=False, margin=dict(l=20, r=20, t=50, b=20), paper_bgcolor='rgba(0,0,0,0)')
-                fig_pie.add_annotation(text=f"{len(df_filt)}<br>Trx", showarrow=False, font_size=20, font_color="white")
+                fig_pie = px.pie(values=mutasi_counts.values, names=mutasi_counts.index, hole=0.7, 
+                                 color_discrete_sequence=['#38bdf8', '#f43f5e'], title="Activity Mix")
                 st.plotly_chart(fig_pie, use_container_width=True)
                 st.markdown("</div>", unsafe_allow_html=True)
-
-            st.markdown("### 📋 Operational Logs")
-            t_stok, t_in, t_out = st.tabs(["📦 Stock Status", "📥 Recent Inbound", "📤 Recent Outbound"])
-            with t_stok:
-                stok_view = stok_summary.copy()
-                stok_view['Status'] = stok_view['Stock'].apply(lambda x: "🔴 Low Stock" if x < 10 else "🟢 Safe")
-                st.dataframe(stok_view.sort_values('Stock'), use_container_width=True, hide_index=True)
-            with t_in:
-                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Masuk'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
-            with t_out:
-                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Keluar'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
-        else: st.info("Pilih rentang tanggal untuk melihat data.")
+        else: st.info("Pilih rentang tanggal.")
 
     # --- MENU: BARANG MASUK ---
     elif menu == "➕ Barang Masuk":
@@ -246,7 +228,6 @@ else:
                         <center><small>Admin: {user_aktif}</small></center>
                     </div>""", unsafe_allow_html=True)
                     if st.button("🗑️ Clear Struk"): del st.session_state['receipt']; st.rerun()
-        else: st.warning("Stok sedang kosong.")
 
     # --- MENU: KONTROL ---
     elif menu == "🔧 Kontrol Transaksi":
@@ -265,7 +246,33 @@ else:
                     cur.execute("UPDATE inventory SET nama_barang=%s, jumlah=%s, jenis_mutasi=%s WHERE id=%s", (new_v, eqt, ejn, tid))
                     conn.commit(); conn.close(); st.success("Updated!"); st.rerun()
 
-    # --- MENU: USER MANAGEMENT ---
+    # --- MENU: USER MANAGEMENT (REVISED) ---
     elif menu == "👥 Manajemen User":
         st.markdown("<h1 class='shimmer-text'>User Control</h1>", unsafe_allow_html=True)
-        st.info("Fitur manajemen user tersedia untuk level Admin.")
+        c_list, c_add = st.columns([1.5, 1])
+        with c_list:
+            st.markdown("### 📋 User Directory")
+            u_data = [{"User": k, "Role": v[1], "Permissions": len(v[2]), "Last Login": st.session_state["global_login_tracker"].get(k, "Never")} for k, v in st.session_state["user_db"].items()]
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            st.dataframe(pd.DataFrame(u_data), use_container_width=True, hide_index=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        with c_add:
+            st.markdown("### 🛠️ Configuration")
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            t1, t2 = st.tabs(["Add/Update", "Remove"])
+            with t1:
+                with st.form("u_form"):
+                    un, ps = st.text_input("Username"), st.text_input("Password", type="password")
+                    rl = st.selectbox("Role", ["Staff", "Supervisor", "Manager"])
+                    st.write("Access:")
+                    p1, p2, p3, p4 = st.checkbox("Dashboard", True), st.checkbox("Masuk", True), st.checkbox("Keluar", True), st.checkbox("Edit", False)
+                    p5 = st.checkbox("User Management", False)
+                    if st.form_submit_button("SAVE"):
+                        perms = [m for m, val in zip(["Dashboard", "Masuk", "Keluar", "Edit", "User Management"], [p1,p2,p3,p4,p5]) if val]
+                        st.session_state["user_db"][un] = [ps, rl, perms]
+                        st.success("User Updated"); st.rerun()
+            with t2:
+                target = st.selectbox("Select User", [u for u in st.session_state["user_db"].keys() if u != 'admin'])
+                if st.button("🚨 DELETE"):
+                    del st.session_state["user_db"][target]; st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
