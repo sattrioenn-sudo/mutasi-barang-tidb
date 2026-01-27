@@ -1,7 +1,7 @@
 import streamlit as st
 import mysql.connector
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, date
 import pytz
 import plotly.express as px
 
@@ -74,51 +74,61 @@ else:
     if not df_raw.empty:
         p_data = df_raw['nama_barang'].apply(parse_detail)
         df_raw['SKU'], df_raw['Item'], df_raw['Unit'] = p_data.apply(lambda x: x[0]), p_data.apply(lambda x: x[1]), p_data.apply(lambda x: x[2])
-        df_raw['Pembuat'], df_raw['Note'] = p_data.apply(lambda x: x[3]), p_data.apply(lambda x: x[5])
+        df_raw['Pembuat'], df_raw['Editor'], df_raw['Note'] = p_data.apply(lambda x: x[3]), p_data.apply(lambda x: x[4]), p_data.apply(lambda x: x[5])
         df_raw['tanggal'] = pd.to_datetime(df_raw['tanggal'])
         df_raw['adj'] = df_raw.apply(lambda x: x['jumlah'] if x['jenis_mutasi'] == 'Masuk' else -x['jumlah'], axis=1)
 
     # --- SIDEBAR NAVIGATION ---
     with st.sidebar:
         st.markdown(f"<h2 class='shimmer-text' style='font-size:1.5rem;'>{user_aktif.upper()}</h2>", unsafe_allow_html=True)
-        
-        # Mapping menu dengan izin
-        all_menus = {
-            "📊 Dashboard": "Dashboard",
-            "➕ Barang Masuk": "Masuk",
-            "📤 Barang Keluar": "Keluar",
-            "🔧 Kontrol Transaksi": "Edit",
-            "👥 Manajemen User": "User Management"
-        }
+        all_menus = {"📊 Dashboard": "Dashboard", "➕ Barang Masuk": "Masuk", "📤 Barang Keluar": "Keluar", "🔧 Kontrol Transaksi": "Edit", "👥 Manajemen User": "User Management"}
         nav_options = [m for m, p in all_menus.items() if p in izin_user]
         menu = st.selectbox("MENU NAVIGATION", nav_options)
-        
         if st.button("🚪 LOGOUT"):
             st.session_state["logged_in"] = False; st.rerun()
 
     # --- MENU: DASHBOARD ---
     if menu == "📊 Dashboard":
         st.markdown("<h1 class='shimmer-text'>Operational Intelligence</h1>", unsafe_allow_html=True)
-        if not df_raw.empty:
-            stok_summary = df_raw.groupby(['SKU', 'Item'])['adj'].sum().reset_index(name='Stock')
-            m1, m2, m3, m4 = st.columns(4)
-            with m1: st.markdown(f"<div class='glass-card metric-box'><small style='color:#38bdf8'>INFLOW</small><h2>{int(df_raw[df_raw['jenis_mutasi']=='Masuk']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
-            with m2: st.markdown(f"<div class='glass-card metric-box'><small style='color:#f43f5e'>OUTFLOW</small><h2>{int(df_raw[df_raw['jenis_mutasi']=='Keluar']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
-            with m3: st.markdown(f"<div class='glass-card metric-box'><small style='color:#10b981'>TOTAL SKU</small><h2>{len(stok_summary)}</h2></div>", unsafe_allow_html=True)
-            with m4: st.markdown(f"<div class='glass-card metric-box' style='border-color:#fbbf24'><small style='color:#fbbf24'>BALANCE</small><h2>{int(stok_summary['Stock'].sum())}</h2></div>", unsafe_allow_html=True)
+        
+        # --- FILTER AREA ---
+        with st.sidebar:
+            st.markdown("---")
+            st.markdown("📅 **Filter Periode**")
+            d_range = st.date_input("Pilih Rentang Tanggal", [date.today().replace(day=1), date.today()])
+        
+        if not df_raw.empty and len(d_range) == 2:
+            # Masking data berdasarkan tanggal
+            mask = (df_raw['tanggal'].dt.date >= d_range[0]) & (df_raw['tanggal'].dt.date <= d_range[1])
+            df_filt = df_raw.loc[mask]
             
-            c1, c2 = st.columns([1.5, 1])
-            with c1:
-                st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                fig_line = px.area(df_raw.sort_values('tanggal'), x='tanggal', y='jumlah', color='jenis_mutasi', color_discrete_map={'Masuk':'#0ea5e9', 'Keluar':'#f43f5e'}, title="Stock Flow Over Time", template="plotly_dark")
-                st.plotly_chart(fig_line, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-            with c2:
-                st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
-                fig_pie = px.pie(stok_summary[stok_summary['Stock']>0], values='Stock', names='Item', hole=0.5, title="Inventory Distribution", template="plotly_dark")
-                st.plotly_chart(fig_pie, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
-        else: st.info("No data available.")
+            stok_summary = df_raw.groupby(['SKU', 'Item'])['adj'].sum().reset_index(name='Stock')
+            
+            m1, m2, m3, m4 = st.columns(4)
+            with m1: st.markdown(f"<div class='glass-card metric-box'><small style='color:#38bdf8'>INFLOW (PERIOD)</small><h2>{int(df_filt[df_filt['jenis_mutasi']=='Masuk']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
+            with m2: st.markdown(f"<div class='glass-card metric-box'><small style='color:#f43f5e'>OUTFLOW (PERIOD)</small><h2>{int(df_filt[df_filt['jenis_mutasi']=='Keluar']['jumlah'].sum())}</h2></div>", unsafe_allow_html=True)
+            with m3: st.markdown(f"<div class='glass-card metric-box'><small style='color:#10b981'>ACTIVE SKU</small><h2>{len(stok_summary[stok_summary['Stock']>0])}</h2></div>", unsafe_allow_html=True)
+            with m4: st.markdown(f"<div class='glass-card metric-box' style='border-color:#fbbf24'><small style='color:#fbbf24'>TOTAL STOCK BALANCE</small><h2>{int(stok_summary['Stock'].sum())}</h2></div>", unsafe_allow_html=True)
+            
+            # --- VIEW DATA MASUK/KELUAR (TANPA MERUSAK DB) ---
+            st.markdown("### 🔍 Log Transaksi Per Periode")
+            t_in, t_out, t_stok = st.tabs(["📥 Barang Masuk", "📤 Barang Keluar", "📦 Sisa Stok"])
+            
+            with t_in:
+                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Masuk'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
+            with t_out:
+                st.dataframe(df_filt[df_filt['jenis_mutasi']=='Keluar'][['tanggal', 'SKU', 'Item', 'jumlah', 'Unit', 'Pembuat', 'Note']], use_container_width=True, hide_index=True)
+            with t_stok:
+                st.dataframe(stok_summary[stok_summary['Stock'] > 0], use_container_width=True, hide_index=True)
+
+            # --- VISUALISASI ---
+            st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+            fig_line = px.line(df_filt.sort_values('tanggal'), x='tanggal', y='jumlah', color='jenis_mutasi', 
+                               line_shape="spline", color_discrete_map={'Masuk':'#38bdf8', 'Keluar':'#f43f5e'},
+                               title="Trend Arus Barang", template="plotly_dark")
+            st.plotly_chart(fig_line, use_container_width=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+        else: st.info("Pilih rentang tanggal atau data tidak tersedia.")
 
     # --- MENU: BARANG MASUK ---
     elif menu == "➕ Barang Masuk":
@@ -139,7 +149,7 @@ else:
                 conn.commit(); conn.close(); st.balloons(); st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- MENU: BARANG KELUAR (NEW LOGIC) ---
+    # --- MENU: BARANG KELUAR ---
     elif menu == "📤 Barang Keluar":
         st.markdown("<h1 class='shimmer-text' style='background: linear-gradient(90deg, #f43f5e, #fb7185); -webkit-background-clip: text;'>Outbound System</h1>", unsafe_allow_html=True)
         if not df_raw.empty:
@@ -167,7 +177,7 @@ else:
                         conn = init_connection(); cur = conn.cursor()
                         cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (val, "Keluar", qty_o, now.strftime('%Y-%m-%d %H:%M:%S')))
                         conn.commit(); conn.close()
-                        st.session_state['receipt'] = {"id": now.strftime('%H%M%S'), "item": nama_o, "qty": qty_o, "unit": unit_o, "to": tujuan, "time": now.strftime('%H:%M')}
+                        st.session_state['receipt'] = {"id": now.strftime('%y%m%d%H%M'), "item": nama_o, "qty": qty_o, "unit": unit_o, "to": tujuan, "time": now.strftime('%d/%m %H:%M')}
                         st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
             
@@ -187,7 +197,7 @@ else:
                     if st.button("Hapus Struk"): del st.session_state['receipt']; st.rerun()
         else: st.warning("Stok kosong.")
 
-    # --- MENU: KONTROL ---
+    # --- MENU: KONTROL (SAMA SEPERTI SEBELUMNYA) ---
     elif menu == "🔧 Kontrol Transaksi":
         st.markdown("<h1 class='shimmer-text'>System Control</h1>", unsafe_allow_html=True)
         t1, t2 = st.tabs(["✏️ Edit Data", "🗑️ Hapus"])
