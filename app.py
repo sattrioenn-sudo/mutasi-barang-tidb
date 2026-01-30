@@ -8,23 +8,22 @@ import plotly.graph_objects as go
 import json
 import os
 
-# 1. Konfigurasi Halaman
+# 1. Konfigurasi Halaman (TETAP)
 st.set_page_config(page_title="APLICATION", page_icon="💎", layout="wide")
 
-# --- INISIALISASI SESSION STATE & STORAGE ---
+# --- 2. INISIALISASI SESSION STATE & STORAGE ---
 if "global_login_tracker" not in st.session_state:
     st.session_state["global_login_tracker"] = {}
 
 if "security_logs" not in st.session_state:
     st.session_state["security_logs"] = []
 
-# Fitur Baru: Simpan Waktu Solved (Non-DB)
+# Fitur Baru: Simpan Waktu Solved Secara Virtual (Tanpa Ubah Tabel DB)
 if "solved_registry" not in st.session_state:
     st.session_state["solved_registry"] = {}
 
-# Update Struktur User DB (Role & Permissions yang lebih detail)
+# Struktur User DB Baru sesuai permintaan (Detail Hak Akses)
 if "user_db" not in st.session_state:
-    # Format: [Password, Role, List_Izin]
     st.session_state["user_db"] = {
         "admin": ["kcs_2026", "Admin", [
             "Dashboard", "Masuk", "Keluar", "Edit", "User Management", "Security",
@@ -33,7 +32,7 @@ if "user_db" not in st.session_state:
         ]]
     }
 
-# --- CSS QUANTUM DASHBOARD DESIGN (TETAP SAMA) ---
+# --- 3. CSS QUANTUM DASHBOARD (TETAP 100% SESUAI ASLI LU) ---
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;600;800&display=swap');
@@ -61,7 +60,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Fungsi Core
+# 4. Fungsi Core
 def init_connection():
     return mysql.connector.connect(**st.secrets["tidb"], ssl_verify_cert=False, use_pure=True)
 
@@ -76,9 +75,8 @@ def has_access(perm_name):
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
-# --- LOGIC AUTH ---
+# --- 5. LOGIC AUTH ---
 if not st.session_state["logged_in"]:
-    # (Halaman Login tetap sama seperti kode awal lu)
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     _, col2, _ = st.columns([1, 1, 1])
     with col2:
@@ -127,16 +125,16 @@ else:
             st.session_state["logged_in"] = False
             st.rerun()
 
-    # --- MENU: DASHBOARD (WITH AUTO TIME INPUT/SOLVED) ---
+    # --- 6. MENU: DASHBOARD (Penambahan Kolom Waktu) ---
     if menu == "📊 Dashboard":
         st.markdown("<h1 class='shimmer-text'>Control Tower</h1>", unsafe_allow_html=True)
         
         if not df_raw.empty:
             # INTEGRASI WAKTU INPUT & SOLVED OTOMATIS
             df_raw['Waktu Input'] = df_raw['tanggal'].dt.strftime('%d/%m/%Y %H:%M')
-            # Cek di registry apakah ada ID yang statusnya "Keluar" atau "Solved"
             df_raw['Waktu Solved'] = df_raw['id'].apply(lambda x: st.session_state["solved_registry"].get(str(x), "-"))
             
+            # (Metrics Lu)
             stok_summary = df_raw.groupby(['SKU', 'Item'])['adj'].sum().reset_index(name='Stock')
             m1, m2, m3, m4 = st.columns(4)
             metrics = [
@@ -149,18 +147,17 @@ else:
                 with col:
                     st.markdown(f"<div class='glass-card' style='border-left: 5px solid {color}'><div class='stat-label'>{label}</div><div class='stat-value'>{val:,}</div></div>", unsafe_allow_html=True)
 
-            # Dashboard Table yang diperbarui kolomnya
             st.markdown("### 📋 Transaction Monitor")
             st.dataframe(df_raw[['id', 'SKU', 'Item', 'jenis_mutasi', 'jumlah', 'Waktu Input', 'Waktu Solved', 'Note']], use_container_width=True, hide_index=True)
 
-    # --- MENU: MANAJEMEN USER (UPDATED TO USER MANAGEMENT WITH DETAIL PERMS) ---
+    # --- 7. MENU: MANAJEMEN USER (Update Hak Akses Detail) ---
     elif menu == "👥 Manajemen User":
         st.markdown("<h1 class='shimmer-text'>User Access Control</h1>", unsafe_allow_html=True)
         c_list, c_add = st.columns([1, 1.2])
         
         with c_list:
             st.markdown("### 📋 User Directory")
-            u_data = [{"User": k, "Role": v[1], "Perms": len(v[2])} for k, v in st.session_state["user_db"].items()]
+            u_data = [{"User": k, "Role": v[1], "Permissions": len(v[2])} for k, v in st.session_state["user_db"].items()]
             st.dataframe(pd.DataFrame(u_data), use_container_width=True, hide_index=True)
 
         with c_add:
@@ -168,54 +165,73 @@ else:
             with st.form("u_form_new"):
                 un, ps = st.text_input("Username"), st.text_input("Password", type="password")
                 rl = st.selectbox("Role", ["Staff", "Supervisor", "Manager", "Admin"])
-                
                 st.write("**Specific Access Rights:**")
-                col_p1, col_p2 = st.columns(2)
-                with col_p1:
-                    p_tix_in = st.checkbox("Input Ticket")
-                    p_tix_up = st.checkbox("Update Ticket")
-                    p_exp = st.checkbox("Export & Reporting")
-                    p_in_m = st.checkbox("Input Barang Masuk")
-                with col_p2:
-                    p_in_k = st.checkbox("Input Barang Keluar")
-                    p_app = st.checkbox("Approved")
-                    p_del = st.checkbox("Hapus Barang")
-                    p_adm = st.checkbox("User Management")
+                c1, c2 = st.columns(2)
+                p_tix_in = c1.checkbox("Input Ticket")
+                p_tix_up = c1.checkbox("Update Ticket")
+                p_exp = c1.checkbox("Export & Reporting")
+                p_in_m = c1.checkbox("Input Barang Masuk")
+                p_in_k = c2.checkbox("Input Barang Keluar")
+                p_app = c2.checkbox("Approved")
+                p_del = c2.checkbox("Hapus Barang")
+                p_adm = c2.checkbox("User Management")
 
                 if st.form_submit_button("SAVE USER CONFIG"):
-                    # Mapping izin ke list
-                    new_perms = ["Dashboard"] # Default
+                    new_perms = ["Dashboard"]
                     if p_tix_in: new_perms.append("Input Ticket")
                     if p_tix_up: new_perms.append("Update Ticket")
                     if p_exp: new_perms.append("Export & Reporting")
-                    if p_in_m: new_perms.append("Masuk"); new_perms.append("Input Barang Masuk")
-                    if p_in_k: new_perms.append("Keluar"); new_perms.append("Input Barang Keluar")
+                    if p_in_m: new_perms.extend(["Masuk", "Input Barang Masuk"])
+                    if p_in_k: new_perms.extend(["Keluar", "Input Barang Keluar"])
                     if p_app: new_perms.append("Approved")
-                    if p_del: new_perms.append("Hapus Barang"); new_perms.append("Edit")
-                    if p_adm: new_perms.append("User Management"); new_perms.append("Security")
-                    
+                    if p_del: new_perms.extend(["Edit", "Hapus Barang"])
+                    if p_adm: new_perms.extend(["User Management", "Security"])
                     st.session_state["user_db"][un] = [ps, rl, new_perms]
-                    st.success(f"Permissions for {un} updated!"); st.rerun()
+                    st.success(f"Akses {un} diperbarui!"); st.rerun()
 
-    # --- LOGIC UNTUK INPUT BARANG MASUK / KELUAR (WITH AUTO SOLVED TRACKER) ---
+    # --- 8. LOGIC TRANSAKSI (Dengan Proteksi Permission) ---
     elif menu == "➕ Barang Masuk":
         if has_access("Input Barang Masuk"):
-            # (Gunakan form lu yang sudah ada, tambahkan logic simpan)
-            st.markdown("<h1 class='shimmer-text'>Inbound Entry</h1>")
-            with st.form("in_form"):
-                sk, nm = st.text_input("SKU"), st.text_input("Name")
-                qt = st.number_input("Qty", min_value=1)
-                if st.form_submit_button("SAVE"):
-                    # Simpan ke DB lu (tetap sama)
-                    st.success("Barang Masuk Tercatat")
-        else: st.warning("Akses Ditolak")
+            st.markdown("<h1 class='shimmer-text'>Inbound Entry</h1>", unsafe_allow_html=True)
+            with st.form("input_in"):
+                c1, c2 = st.columns(2)
+                sk, nm = c1.text_input("SKU Code"), c1.text_input("Item Name")
+                stn = c1.selectbox("Unit", ["Pcs", "Box", "Kg", "Unit"])
+                qt, ke = c2.number_input("Qty Masuk", min_value=1), c2.text_area("Catatan")
+                if st.form_submit_button("SAVE INBOUND"):
+                    tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz)
+                    val = f"{sk} | {nm} | {stn} | {user_aktif} | - | {ke}"
+                    conn = init_connection(); cur = conn.cursor()
+                    cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (val, "Masuk", qt, now.strftime('%Y-%m-%d %H:%M:%S')))
+                    conn.commit(); conn.close()
+                    st.balloons(); st.rerun()
+        else: st.warning("Akses Input Barang Masuk Ditolak!")
 
     elif menu == "📤 Barang Keluar":
         if has_access("Input Barang Keluar"):
-            # (Sama seperti kode lu, tapi saat simpan tambahkan ini:)
-            # st.session_state["solved_registry"][str(new_id)] = datetime.now(tz).strftime('%d/%m/%Y %H:%M')
-            st.markdown("<h1 class='shimmer-text'>Outbound System</h1>")
-            # ... (Form keluar lu)
-        else: st.warning("Akses Ditolak")
+            st.markdown("<h1 class='shimmer-text' style='background: linear-gradient(90deg, #f43f5e, #fb7185); -webkit-background-clip: text;'>Outbound System</h1>", unsafe_allow_html=True)
+            if not df_raw.empty:
+                stok_skrng = df_raw.groupby(['SKU', 'Item', 'Unit'])['adj'].sum().reset_index()
+                stok_ready = stok_skrng[stok_skrng['adj'] > 0]
+                with st.form("out_f"):
+                    choice = st.selectbox("Pilih Barang", stok_ready.apply(lambda x: f"{x['SKU']} | {x['Item']} (Sisa: {int(x['adj'])} {x['Unit']})", axis=1))
+                    qty_o = st.number_input("Qty Keluar", min_value=1)
+                    tujuan = st.text_input("Tujuan")
+                    if st.form_submit_button("🔥 KONFIRMASI KELUAR"):
+                        tz = pytz.timezone('Asia/Jakarta'); now = datetime.now(tz)
+                        sku_o = choice.split('|')[0].strip(); nama_o = choice.split('|')[1].split('(')[0].strip()
+                        val = f"{sku_o} | {nama_o} | - | {user_aktif} | - | TO: {tujuan}"
+                        conn = init_connection(); cur = conn.cursor()
+                        cur.execute("INSERT INTO inventory (nama_barang, jenis_mutasi, jumlah, tanggal) VALUES (%s,%s,%s,%s)", (val, "Keluar", qty_o, now.strftime('%Y-%m-%d %H:%M:%S')))
+                        new_id = cur.lastrowid
+                        conn.commit(); conn.close()
+                        # Catat Waktu Solved Otomatis
+                        st.session_state["solved_registry"][str(new_id)] = now.strftime('%d/%m/%Y %H:%M')
+                        st.rerun()
+        else: st.warning("Akses Input Barang Keluar Ditolak!")
 
-    # (Menu lainnya seperti Security Logs tetap sama)
+    # --- 9. SECURITY LOGS (TETAP) ---
+    elif menu == "🛡️ Security Logs":
+        st.markdown("<h1 class='shimmer-text'>Security Audit</h1>", unsafe_allow_html=True)
+        if st.session_state["security_logs"]:
+            st.dataframe(pd.DataFrame(st.session_state["security_logs"]).iloc[::-1], use_container_width=True, hide_index=True)
